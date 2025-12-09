@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	reg "github.com/alekseev-bro/ddd/internal/registry"
+	"github.com/alekseev-bro/ddd/internal/typereg"
 )
 
 type sagaHandlerFunc[E Event[T], C Command[U], T any, U any] func(event E) C
@@ -36,10 +36,10 @@ func Saga[E Event[T], C Command[U], T any, U any](ctx context.Context, sub proje
 		tt T
 	)
 
-	ename := reg.TypeNameFrom(ee)
-	cname := reg.TypeNameFrom(cc)
-	sname := reg.TypeNameFrom(tt)
-	cmname := reg.TypeNameFrom(uu)
+	ename := typereg.TypeNameFrom(ee)
+	cname := typereg.TypeNameFrom(cc)
+	sname := typereg.TypeNameFrom(tt)
+	cmname := typereg.TypeNameFrom(uu)
 	durname := fmt.Sprintf("%s:%s|%s:%s", sname, ename, cmname, cname)
 
 	d, err := sub.Project(ctx, sh, WithName(durname), WithUnordered(), FilterByEvent[E]())
@@ -48,6 +48,6 @@ func Saga[E Event[T], C Command[U], T any, U any](ctx context.Context, sub proje
 		panic(err)
 	}
 
-	return d[0]
+	return d
 
 }

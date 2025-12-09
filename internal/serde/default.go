@@ -7,18 +7,29 @@ type Serder interface {
 	Deserialize(b []byte, out any) error
 }
 
-func NewDefaultSerder() *defaultSerder {
-	return &defaultSerder{}
+func Serialize(v any) ([]byte, error) {
+	return defaultSerder.Serialize(v)
 }
 
-type defaultSerder struct{}
+func Deserialize(b []byte, out any) error {
+	return defaultSerder.Deserialize(b, out)
+}
 
-func (defaultSerder) Serialize(v any) ([]byte, error) {
+func SetDefaultSerder(s Serder) {
+	defaultSerder = s
+}
+
+// default is json
+var defaultSerder Serder = &jsonSerder{}
+
+type jsonSerder struct{}
+
+func (*jsonSerder) Serialize(v any) ([]byte, error) {
 
 	return json.Marshal(v)
 }
 
-func (defaultSerder) Deserialize(b []byte, out any) error {
+func (*jsonSerder) Deserialize(b []byte, out any) error {
 
 	return json.Unmarshal(b, out)
 }

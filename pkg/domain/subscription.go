@@ -3,7 +3,7 @@ package domain
 import (
 	"context"
 
-	reg "github.com/alekseev-bro/ddd/internal/registry"
+	"github.com/alekseev-bro/ddd/internal/typereg"
 )
 
 type OrderingType uint
@@ -52,7 +52,7 @@ func WithUnordered() ProjOption {
 func FilterByEvent[E Event[T], T any]() ProjOption {
 	return func(p *SubscribeParams) {
 		var ev E
-		p.Kind = append(p.Kind, reg.TypeNameFrom(ev))
+		p.Kind = append(p.Kind, typereg.TypeNameFrom(ev))
 	}
 }
 
@@ -72,9 +72,9 @@ type EventHandler[T any] interface {
 	Handle(ctx context.Context, eventID ID[Event[T]], event Event[T]) error
 }
 
-func (a *aggregate[T]) Project(ctx context.Context, h EventHandler[T], opts ...ProjOption) ([]Drainer, error) {
+func (a *aggregate[T]) Project(ctx context.Context, h EventHandler[T], opts ...ProjOption) (Drainer, error) {
 	params := &SubscribeParams{
-		DurableName: reg.TypeNameFrom(h),
+		DurableName: typereg.TypeNameFrom(h),
 		Ordering:    Ordered,
 		QoS:         AtLeastOnce,
 	}
@@ -83,7 +83,7 @@ func (a *aggregate[T]) Project(ctx context.Context, h EventHandler[T], opts ...P
 	}
 
 	return a.es.Subscribe(ctx, func(envel *Envelope) error {
-		ev := a.tr.GetType(envel.Kind, envel.Payload)
+		ev := typereg.GetType(envel.Kind, envel.Payload)
 		return h.Handle(ctx, ID[Event[T]](envel.ID.String()), ev.(Event[T]))
 	}, params)
 }

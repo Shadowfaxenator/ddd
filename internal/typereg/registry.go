@@ -1,4 +1,4 @@
-package registry
+package typereg
 
 import (
 	"fmt"
@@ -11,20 +11,10 @@ import (
 
 type ctor func(payload []byte) any
 
-type Type struct {
-	serde.Serder
-	ermu  sync.RWMutex
-	items map[string]ctor
-}
+var ermu sync.RWMutex
+var items map[string]ctor = make(map[string]ctor)
 
-func New(s serde.Serder) *Type {
-	return &Type{
-		Serder: s,
-		items:  make(map[string]ctor),
-	}
-}
-
-func (r *Type) Register(item any) {
+func Register(item any) {
 	t := reflect.TypeOf(item)
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -37,7 +27,7 @@ func (r *Type) Register(item any) {
 	ctor := func(payload []byte) any {
 
 		vt := reflect.New(t).Interface()
-		if err := r.Serder.Deserialize(payload, vt); err != nil {
+		if err := serde.Deserialize(payload, vt); err != nil {
 			slog.Error("registry: failed to deserialize", "type", t.Name(), "error", err)
 			panic(err)
 		}
@@ -45,9 +35,9 @@ func (r *Type) Register(item any) {
 		//	var val V
 
 	}
-	r.ermu.Lock()
-	r.items[TypeNameFrom(item)] = ctor
-	r.ermu.Unlock()
+	ermu.Lock()
+	items[TypeNameFrom(item)] = ctor
+	ermu.Unlock()
 
 }
 
@@ -69,22 +59,22 @@ func TypeNameFrom(e any) string {
 	}
 }
 
-func (r *Type) GuardType(t any) string {
+func GuardType(t any) string {
 	tname := TypeNameFrom(t)
-	r.ermu.RLock()
-	defer r.ermu.RUnlock()
-	if _, ok := r.items[tname]; ok {
+	ermu.RLock()
+	defer ermu.RUnlock()
+	if _, ok := items[tname]; ok {
 		return tname
 	}
 	slog.Error("guard: no type found", "type", tname)
 	panic("unrecovered")
 }
 
-func (r *Type) GetType(tname string, b []byte) any {
-	r.ermu.RLock()
-	defer r.ermu.RUnlock()
+func GetType(tname string, b []byte) any {
+	ermu.RLock()
+	defer ermu.RUnlock()
 
-	if ct, ok := r.items[tname]; ok {
+	if ct, ok := items[tname]; ok {
 
 		return ct(b)
 	}

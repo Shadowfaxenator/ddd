@@ -123,8 +123,8 @@ func msgID(h nats.Header) uuid.UUID {
 	return uup
 }
 
-func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64, handler func(event *domain.Envelope)) (uint64, error) {
-	var lastevent uint64
+func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([]*domain.Envelope, error) {
+	var envelopes []*domain.Envelope
 	subj := s.allSubjectsForID(id)
 	msgs, err := jetstreamext.GetBatch(ctx,
 		s.js, s.streamName(), math.MaxInt, jetstreamext.GetBatchSubject(subj),
@@ -132,15 +132,15 @@ func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64, ha
 	//fmt.Println(time.Since(start))
 
 	if err != nil {
-		return 0, fmt.Errorf("get events: %w", err)
+		return nil, fmt.Errorf("get events: %w", err)
 	}
 
 	for msg, err := range msgs {
 		if err != nil {
 			if errors.Is(err, jetstreamext.ErrNoMessages) {
-				return 0, store.ErrNoAggregate
+				return nil, store.ErrNoAggregate
 			}
-			return 0, fmt.Errorf("build func can't get msg batch: %w", err)
+			return nil, fmt.Errorf("build func can't get msg batch: %w", err)
 		}
 		subjectParts := strings.Split(msg.Subject, ".")
 
@@ -151,10 +151,9 @@ func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64, ha
 			Payload: msg.Data,
 		}
 
-		handler(envel)
-		lastevent = msg.Sequence
+		envelopes = append(envelopes, envel)
 	}
-	return lastevent, nil
+	return envelopes, nil
 }
 
 type drainAdapter struct {
@@ -166,7 +165,18 @@ func (d *drainAdapter) Drain() error {
 	return nil
 }
 
-func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *domain.Envelope) error, params *domain.SubscribeParams) ([]domain.Drainer, error) {
+type drainList []domain.Drainer
+
+func (d drainList) Drain() error {
+	for _, drainer := range d {
+		if err := drainer.Drain(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *domain.Envelope) error, params *domain.SubscribeParams) (domain.Drainer, error) {
 
 	maxpend := 1000
 	if params.Ordering == domain.Ordered {
@@ -181,7 +191,7 @@ func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *doma
 		filter = append(filter, fmt.Sprintf("%s.%s.%s", e.streamName(), params.AggrID(), "*"))
 	}
 	if params.QoS == domain.AtMostOnce {
-		subs := make([]domain.Drainer, len(filter))
+		subs := make(drainList, len(filter))
 		for i, f := range filter {
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
 				seq, _ := strconv.Atoi(msg.Header.Get("Nats-Sequence"))
@@ -238,7 +248,6 @@ func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *doma
 	if err != nil {
 		panic(fmt.Errorf("subscription consume: %w", err))
 	}
-
-	return []domain.Drainer{&drainAdapter{ConsumeContext: ct}}, nil
+	return drainList{&drainAdapter{ConsumeContext: ct}}, nil
 
 }
