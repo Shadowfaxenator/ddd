@@ -124,7 +124,7 @@ type subscriber interface {
 type ProjOption func(p *SubscribeParams)
 
 type eventStream[T any] interface {
-	Save(ctx context.Context, aggrID string, idempotencyKey string, events []*Envelope) error
+	Save(ctx context.Context, aggrID string, idempotencyKey string, event *Envelope) error
 	Load(ctx context.Context, aggrID string, fromSeq uint64) ([]*Envelope, error)
 	subscriber
 }
@@ -173,19 +173,28 @@ func (a *aggregate[T]) build(ctx context.Context, id ID[T]) (*snapshot[T], error
 
 	envelopes, err := a.es.Load(ctx, id.String(), snap.Version)
 	if err != nil {
-		return nil, fmt.Errorf("buid %w", err)
-	}
-	for _, e := range envelopes {
-		ev := typereg.GetType(e.Kind, e.Payload)
-
-		ev.(Event[T]).Apply(snap.Body)
+		if !errors.Is(err, store.ErrNoAggregate) {
+			return nil, fmt.Errorf("buid %w", err)
+		}
 
 	}
+	if envelopes != nil {
+		for _, e := range envelopes {
+			ev := typereg.GetType(e.Kind, e.Payload)
 
-	snap.Version = envelopes[len(envelopes)-1].Version
-	if messageCount(len(envelopes)) >= messageCount(a.snapshotThreshold.numMsgs) && time.Since(snap.Timestamp) > a.snapshotThreshold.interval {
-		snap.old = true
+			ev.(Event[T]).Apply(snap.Body)
+
+		}
+
+		snap.Version = envelopes[len(envelopes)-1].Version
 		snap.MsgCount = snap.MsgCount + messageCount(len(envelopes))
+		if messageCount(len(envelopes)) >= messageCount(a.snapshotThreshold.numMsgs) && time.Since(snap.Timestamp) > a.snapshotThreshold.interval {
+			snap.old = true
+		}
+	}
+
+	if snap.MsgCount == 0 {
+		snap.Body = nil
 	}
 
 	return &snap, nil
@@ -223,19 +232,16 @@ func (a *aggregate[T]) Execute(ctx context.Context, idempKey string, command Com
 		opt(o)
 	}
 	var err error
-	snap := &snapshot[T]{}
-	snap, err = a.build(ctx, command.AggregateID())
-	if err != nil {
-		if !errors.Is(err, store.ErrNoAggregate) {
-			return fmt.Errorf("build aggrigate: %w", err)
-		}
-		snap = &snapshot[T]{}
 
+	snap, err := a.build(ctx, command.AggregateID())
+	if err != nil {
+		return fmt.Errorf("build aggrigate: %w", err)
 	}
 
 	evt := command.Execute(snap.Body)
 
-	if _, ok := evt.(*EventError[T]); ok {
+	if everr, ok := evt.(*EventError[T]); ok {
+		slog.Warn("command execution error", "error", everr.Reason, "aggregate_id", command.AggregateID().String())
 		return nil
 	}
 
@@ -250,7 +256,7 @@ func (a *aggregate[T]) Execute(ctx context.Context, idempKey string, command Com
 
 	eventUUID := NewIdempotencyKey(command.AggregateID(), idempKey)
 
-	if err := a.es.Save(ctx, command.AggregateID().String(), eventUUID, []*Envelope{{Version: snap.Version, Payload: b, Kind: kind}}); err != nil {
+	if err := a.es.Save(ctx, command.AggregateID().String(), eventUUID, &Envelope{Version: snap.Version, Payload: b, Kind: kind}); err != nil {
 		return fmt.Errorf("command: %w", err)
 	}
 

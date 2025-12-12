@@ -49,7 +49,7 @@ func WithUnordered() ProjOption {
 	}
 }
 
-func FilterByEvent[E Event[T], T any]() ProjOption {
+func WithFilterByEvent[E Event[T], T any]() ProjOption {
 	return func(p *SubscribeParams) {
 		var ev E
 		p.Kind = append(p.Kind, typereg.TypeNameFrom(ev))
@@ -79,7 +79,10 @@ func (a *aggregate[T]) Project(ctx context.Context, h EventHandler[T], opts ...P
 		QoS:         AtLeastOnce,
 	}
 	for _, opt := range opts {
-		opt(params)
+		if opt != nil {
+			opt(params)
+		}
+
 	}
 
 	return a.es.Subscribe(ctx, func(envel *Envelope) error {

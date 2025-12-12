@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	eventKindHeader string = "Event-Kind"
+	maxAckPending int = 1000
 )
 
 type StoreType jetstream.StorageType
@@ -87,31 +87,28 @@ func (s *eventStream[T]) subscribeSubject() string {
 	return fmt.Sprintf("sub.%s.>", s.streamName())
 }
 
-func (s *eventStream[T]) Save(ctx context.Context, aggrID string, idempotencyKey string, events []*domain.Envelope) error {
+func (s *eventStream[T]) Save(ctx context.Context, aggrID string, idempotencyKey string, envel *domain.Envelope) error {
 	// TODO: handle many events
-	for _, envel := range events {
 
-		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(aggrID), envel.Kind)
+	sub := fmt.Sprintf("%s.%s", s.subjectNameForID(aggrID), envel.Kind)
 
-		msg := nats.NewMsg(sub)
+	msg := nats.NewMsg(sub)
 
-		msg.Header.Add(jetstream.MsgIDHeader, idempotencyKey)
+	msg.Header.Add(jetstream.MsgIDHeader, idempotencyKey)
 
-		msg.Data = envel.Payload
+	msg.Data = envel.Payload
 
-		_, err := s.js.PublishMsg(ctx, msg, jetstream.WithExpectLastSequenceForSubject(envel.Version, s.allSubjectsForID(aggrID)))
-		if err != nil {
-			var seqerr *jetstream.APIError
-			if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
-				slog.Warn("occ", "version", envel.Version, "name", s.subjectNameForID(aggrID))
-			}
-			return fmt.Errorf("store event func: %w", err)
+	_, err := s.js.PublishMsg(ctx, msg, jetstream.WithExpectLastSequenceForSubject(envel.Version, s.allSubjectsForID(aggrID)))
+	if err != nil {
+		var seqerr *jetstream.APIError
+		if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
+			slog.Warn("occ", "version", envel.Version, "name", s.subjectNameForID(aggrID))
 		}
-		slog.Info("event stored", "kind", envel.Kind, "subject", s.subjectNameForID(aggrID), "stream", s.streamName())
-		return nil
+		return fmt.Errorf("store event func: %w", err)
 	}
-
+	slog.Info("event stored", "kind", envel.Kind, "subject", s.subjectNameForID(aggrID), "stream", s.streamName())
 	return nil
+
 }
 
 func msgID(h nats.Header) uuid.UUID {
@@ -138,6 +135,7 @@ func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([
 	for msg, err := range msgs {
 		if err != nil {
 			if errors.Is(err, jetstreamext.ErrNoMessages) {
+
 				return nil, store.ErrNoAggregate
 			}
 			return nil, fmt.Errorf("build func can't get msg batch: %w", err)
@@ -178,7 +176,7 @@ func (d drainList) Drain() error {
 
 func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *domain.Envelope) error, params *domain.SubscribeParams) (domain.Drainer, error) {
 
-	maxpend := 1000
+	maxpend := maxAckPending
 	if params.Ordering == domain.Ordered {
 		maxpend = 1
 	}
