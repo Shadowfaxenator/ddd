@@ -1,4 +1,4 @@
-package domain_test
+package aggregate_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alekseev-bro/ddd/pkg/domain"
+	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/store"
 )
 
@@ -36,7 +36,7 @@ type MockEventStream struct {
 	subs map[string]sub
 
 	mue    sync.RWMutex
-	events []*domain.Envelope
+	events []*aggregate.Envelope
 
 	muk  sync.Mutex
 	keys map[string]struct{}
@@ -50,7 +50,7 @@ func (m *MockEventStream) removeSub(key string) {
 	delete(m.subs, key)
 }
 
-func (m *MockEventStream) Save(ctx context.Context, aggrID string, idempotencyKey string, envel *domain.Envelope) error {
+func (m *MockEventStream) Save(ctx context.Context, aggrID string, idempotencyKey string, envel *aggregate.Envelope) error {
 	m.muk.Lock()
 	defer m.muk.Unlock()
 	if _, ok := m.keys[idempotencyKey]; ok {
@@ -77,10 +77,10 @@ func (m *MockEventStream) Save(ctx context.Context, aggrID string, idempotencyKe
 	return nil
 }
 
-func (m *MockEventStream) Load(ctx context.Context, aggrID string, fromSeq uint64) ([]*domain.Envelope, error) {
+func (m *MockEventStream) Load(ctx context.Context, aggrID string, fromSeq uint64) ([]*aggregate.Envelope, error) {
 	m.mue.RLock()
 	defer m.mue.RUnlock()
-	var envelopes []*domain.Envelope
+	var envelopes []*aggregate.Envelope
 	for i, event := range m.events {
 		if i >= int(fromSeq) {
 			envelopes = append(envelopes, event)
@@ -93,8 +93,8 @@ func (m *MockEventStream) Load(ctx context.Context, aggrID string, fromSeq uint6
 }
 
 type sub struct {
-	ch     chan *domain.Envelope
-	params *domain.SubscribeParams
+	ch     chan *aggregate.Envelope
+	params *aggregate.SubscribeParams
 }
 
 type drainer struct {
@@ -107,10 +107,10 @@ func (d *drainer) Drain() error {
 	return nil
 }
 
-func (m *MockEventStream) Subscribe(ctx context.Context, handler func(envel *domain.Envelope) error, params *domain.SubscribeParams) (domain.Drainer, error) {
+func (m *MockEventStream) Subscribe(ctx context.Context, handler func(envel *aggregate.Envelope) error, params *aggregate.SubscribeParams) (aggregate.Drainer, error) {
 	m.mus.Lock()
 	defer m.mus.Unlock()
-	subch := make(chan *domain.Envelope, 50)
+	subch := make(chan *aggregate.Envelope, 50)
 	go func() {
 		for {
 			select {
@@ -165,14 +165,14 @@ type CreateUser struct {
 	MockUser
 }
 
-func (c *CreateUser) AggregateID() domain.ID[MockUser] {
-	return domain.ID[MockUser](c.ID)
+func (c *CreateUser) AggregateID() aggregate.ID[MockUser] {
+	return aggregate.ID[MockUser](c.ID)
 }
 
-func (c *CreateUser) Execute(a *MockUser) domain.Event[MockUser] {
+func (c *CreateUser) Execute(a *MockUser) aggregate.Event[MockUser] {
 	if a != nil {
 
-		return &domain.EventError[MockUser]{Reason: "customer already exists"}
+		return &aggregate.EventError[MockUser]{Reason: "customer already exists"}
 	}
 
 	return &UserCreated{User: c.MockUser}
@@ -181,7 +181,7 @@ func (c *CreateUser) Execute(a *MockUser) domain.Event[MockUser] {
 func TestAggregate(t *testing.T) {
 	//	t.Parallel()
 
-	aggr := domain.NewAggregate[MockUser](context.Background(), NewMockEventStream(), NewMockSnapshotStore())
+	aggr := aggregate.New[MockUser](context.Background(), NewMockEventStream(), NewMockSnapshotStore())
 	t.Run("Aggregate", func(t *testing.T) {
 		aggr.Execute(context.Background(), "test", &CreateUser{MockUser{Name: "test"}})
 	})

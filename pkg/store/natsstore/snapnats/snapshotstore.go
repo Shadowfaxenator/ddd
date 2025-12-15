@@ -5,9 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/store"
-
-	"github.com/alekseev-bro/ddd/pkg/store/natsstore"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -26,25 +25,25 @@ const (
 	Memory
 )
 
-func NewSnapshotStore[T any](ctx context.Context, js jetstream.JetStream, opts ...option[T]) *snapshotStore[T] {
-	aname, bname := natsstore.MetaFromType[T]()
-	store := &snapshotStore[T]{
+func NewSnapshotStore[T any](ctx context.Context, js jetstream.JetStream, opts ...Option[T]) *snapshotStore[T] {
+	aname, bname := aggregate.AggregateNameFromType[T]()
+	ss := &snapshotStore[T]{
 		tname:      aname,
 		boundedCtx: bname,
 	}
 	for _, opt := range opts {
-		opt(store)
+		opt(ss)
 	}
 	kv, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
-		Bucket:  store.snapshotBucketName(),
-		Storage: jetstream.StorageType(store.storeType),
+		Bucket:  ss.snapshotBucketName(),
+		Storage: jetstream.StorageType(ss.storeType),
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	store.kv = kv
-	return store
+	ss.kv = kv
+	return ss
 }
 
 func (s *snapshotStore[T]) snapshotBucketName() string {

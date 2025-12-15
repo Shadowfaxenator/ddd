@@ -1,15 +1,15 @@
 package esnats
 
-type option[T any] func(*eventStream[T]) error
+type Option[T any] func(*eventStream[T]) error
 
-func WithPartitions[T any](partitions byte) option[T] {
+func WithPartitions[T any](partitions byte) Option[T] {
 	return func(es *eventStream[T]) error {
 		es.partnum = partitions
 		return nil
 	}
 }
 
-func WithInMemory[T any]() option[T] {
+func WithInMemory[T any]() Option[T] {
 	return func(es *eventStream[T]) error {
 		es.storeType = Memory
 		return nil

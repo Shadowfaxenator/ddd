@@ -1,4 +1,4 @@
-package domain
+package aggregate
 
 type EventID[T any] ID[Event[T]]
 
@@ -16,9 +16,4 @@ func (e *EventError[T]) Apply(*T) {}
 
 type Event[T any] interface {
 	Apply(*T)
-}
-
-func RegisterEvent[E Event[T], T any](reg registry) {
-	var ev E
-	reg.register(ev)
 }

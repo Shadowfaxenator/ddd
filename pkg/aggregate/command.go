@@ -1,4 +1,4 @@
-package domain
+package aggregate
 
 type Command[T any] interface {
 	Execute(entity *T) Event[T]

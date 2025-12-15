@@ -11,9 +11,8 @@ import (
 
 	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/store"
-	"github.com/alekseev-bro/ddd/pkg/store/natsstore"
 
-	"github.com/alekseev-bro/ddd/pkg/domain"
+	"github.com/alekseev-bro/ddd/pkg/aggregate"
 
 	"math"
 
@@ -35,16 +34,17 @@ const (
 )
 
 type eventStream[T any] struct {
-	dedupe     time.Duration
-	storeType  StoreType
+	dedupe    time.Duration
+	storeType StoreType
+	// TODO: impl partitioning
 	partnum    uint8
 	tname      string
 	boundedCtx string
 	js         jetstream.JetStream
 }
 
-func NewEventStream[T any](ctx context.Context, js jetstream.JetStream, opts ...option[T]) *eventStream[T] {
-	aname, bcname := natsstore.MetaFromType[T]()
+func NewEventStream[T any](ctx context.Context, js jetstream.JetStream, opts ...Option[T]) *eventStream[T] {
+	aname, bcname := aggregate.AggregateNameFromType[T]()
 
 	stream := &eventStream[T]{js: js, tname: aname, boundedCtx: bcname}
 
@@ -89,7 +89,7 @@ func (s *eventStream[T]) subscribeSubject() string {
 	return fmt.Sprintf("sub.%s.>", s.streamName())
 }
 
-func (s *eventStream[T]) Save(ctx context.Context, aggrID string, idempotencyKey string, envel *domain.Envelope) error {
+func (s *eventStream[T]) Save(ctx context.Context, aggrID string, idempotencyKey string, envel *aggregate.Envelope) error {
 	// TODO: handle many events
 
 	sub := fmt.Sprintf("%s.%s", s.subjectNameForID(aggrID), envel.Kind)
@@ -122,8 +122,8 @@ func msgID(h nats.Header) uuid.UUID {
 	return uup
 }
 
-func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([]*domain.Envelope, error) {
-	var envelopes []*domain.Envelope
+func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([]*aggregate.Envelope, error) {
+	var envelopes []*aggregate.Envelope
 	subj := s.allSubjectsForID(id)
 	msgs, err := jetstreamext.GetBatch(ctx,
 		s.js, s.streamName(), math.MaxInt, jetstreamext.GetBatchSubject(subj),
@@ -144,7 +144,7 @@ func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([
 		}
 		subjectParts := strings.Split(msg.Subject, ".")
 
-		envel := &domain.Envelope{
+		envel := &aggregate.Envelope{
 			ID:      msgID(msg.Header),
 			Kind:    subjectParts[2],
 			Version: msg.Sequence,
@@ -165,7 +165,7 @@ func (d *drainAdapter) Drain() error {
 	return nil
 }
 
-type drainList []domain.Drainer
+type drainList []aggregate.Drainer
 
 func (d drainList) Drain() error {
 	for _, drainer := range d {
@@ -176,7 +176,7 @@ func (d drainList) Drain() error {
 	return nil
 }
 
-func aggrIDFromParams(params *domain.SubscribeParams) string {
+func aggrIDFromParams(params *aggregate.SubscribeParams) string {
 	if params.AggrID != "" {
 		return params.AggrID
 	}
@@ -184,7 +184,7 @@ func aggrIDFromParams(params *domain.SubscribeParams) string {
 	return "*"
 }
 
-func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *domain.Envelope) error, params *domain.SubscribeParams) (domain.Drainer, error) {
+func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *aggregate.Envelope) error, params *aggregate.SubscribeParams) (aggregate.Drainer, error) {
 
 	maxpend := maxAckPending
 	if params.QoS.Ordering == qos.Ordered {
@@ -205,7 +205,7 @@ func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *doma
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
 				seq, _ := strconv.Atoi(msg.Header.Get("Nats-Sequence"))
 				subjectParts := strings.Split(msg.Subject, ".")
-				handler(&domain.Envelope{
+				handler(&aggregate.Envelope{
 					ID:      msgID(msg.Header),
 					Kind:    subjectParts[2],
 					Version: uint64(seq),
@@ -240,7 +240,7 @@ func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *doma
 			return
 		}
 		subjectParts := strings.Split(msg.Subject(), ".")
-		envel := &domain.Envelope{
+		envel := &aggregate.Envelope{
 			ID:      msgID(msg.Headers()),
 			Kind:    subjectParts[2],
 			Version: mt.Sequence.Stream,
