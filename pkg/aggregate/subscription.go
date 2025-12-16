@@ -14,13 +14,13 @@ type SubscribeParams struct {
 	QoS         qos.QoS
 }
 
-func WIthFilterByAggregateID[T any](id ID[T]) ProjOption {
+func WIthFilterByAggregateID[T Aggregatable](id ID[T]) ProjOption {
 	return func(p *SubscribeParams) {
 		p.AggrID = id.String()
 	}
 }
 
-func WithFilterByEvent[E Event[T], T any]() ProjOption {
+func WithFilterByEvent[E Event[T], T Aggregatable]() ProjOption {
 	return func(p *SubscribeParams) {
 		var ev E
 		p.Kind = append(p.Kind, typereg.TypeNameFrom(ev))
@@ -39,7 +39,7 @@ func WithQoS(qos qos.QoS) ProjOption {
 	}
 }
 
-type EventHandler[T any] interface {
+type EventHandler[T Aggregatable] interface {
 	Handle(ctx context.Context, eventID EventID[T], event Event[T]) error
 }
 

@@ -31,7 +31,7 @@ const (
 )
 
 // AggregateNameFromType returns the aggregate name and bounded context name from the type T.
-func AggregateNameFromType[T any]() (aname string, bctx string) {
+func AggregateNameFromType[T Aggregatable]() (aname string, bctx string) {
 	t := reflect.TypeFor[T]()
 	if t.Kind() != reflect.Struct {
 		panic("T must be a struct")
@@ -53,37 +53,11 @@ func (*Root[T]) NewID() ID[T] {
 	return ID[T](a.String())
 }
 
-type ID[T any] string
-
-func (i ID[T]) String() string {
-	return string(i)
-}
-
-func (i ID[T]) UUID() uuid.UUID {
-	u, err := uuid.Parse(string(i))
-	if err != nil {
-		panic(err)
-	}
-	return u
-}
-
 // SetTypeEncoder sets the default encoder for the aggregate,
 // encoder must be a Serder implementation.
 // Default is JSON.
 func SetTypeEncoder(s Serder) {
 	serde.SetDefaultSerder(s)
-}
-
-// NewUniqueIdempKeyForEvent creates a new idempotency key for the given aggregate ID and key.
-// ID guarantees uniqueness across all events of the same aggregate.
-func NewUniqueCommandIdempKey[C Command[T], T any](aggrID ID[T]) string {
-	var ev C
-	i, err := uuid.Parse(aggrID.String())
-
-	if err != nil {
-		panic(err)
-	}
-	return uuid.NewSHA1(i, []byte(typereg.TypeNameFrom(ev))).String()
 }
 
 type snapshotThreshold struct {
@@ -92,7 +66,7 @@ type snapshotThreshold struct {
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any](ctx context.Context, es eventStream[T], ss snapshotStore[T], opts ...Option[T]) *Root[T] {
+func New[T Aggregatable](ctx context.Context, es EventStream[T], ss SnapshotStore[T], opts ...Option[T]) *Root[T] {
 
 	aggr := &Root[T]{
 		snapshotThreshold: snapshotThreshold{interval: snapshotInterval, numMsgs: byte(snapshotSize)},
@@ -102,6 +76,7 @@ func New[T any](ctx context.Context, es eventStream[T], ss snapshotStore[T], opt
 	for _, o := range opts {
 		o(aggr)
 	}
+	//	var zero T
 
 	return aggr
 }
@@ -118,18 +93,18 @@ type Envelope struct {
 // Executer is an interface that defines the Execute method for executing commands on an aggregate.
 // Each command is executed in a transactional manner, ensuring that the aggregate state is consistent.
 // Commands must implement the Command interface.
-type Executer[T any] interface {
+type Executer[T Aggregatable] interface {
 	Execute(ctx context.Context, idempotencyKey string, command Command[T]) (CommandID[T], error)
 }
 
 // Projector is an interface that defines the Project method for projecting events on an aggregate.
 // Events must implement the Event interface.
-type Projector[T any] interface {
+type Projector[T Aggregatable] interface {
 	Project(ctx context.Context, h EventHandler[T], opts ...ProjOption) (Drainer, error)
 }
 
 // All aggregates must implement the Aggregate interface.
-type Aggregate[T any] interface {
+type Aggregate[T Aggregatable] interface {
 	Projector[T]
 	Executer[T]
 	NewID() ID[T]
@@ -146,27 +121,27 @@ type subscriber interface {
 
 type ProjOption func(p *SubscribeParams)
 
-type eventStream[T any] interface {
+type EventStream[T Aggregatable] interface {
 	Save(ctx context.Context, aggrID string, idempotencyKey string, event *Envelope) error
 	Load(ctx context.Context, aggrID string, fromSeq uint64) ([]*Envelope, error)
 	subscriber
 }
 
-type snapshotStore[T any] interface {
+type SnapshotStore[T Aggregatable] interface {
 	Save(ctx context.Context, aggrID string, snap []byte) error
 	Load(ctx context.Context, aggrID string) ([]byte, error)
 }
 
 // Aggregate root type it implements the Aggregate interface.
-type Root[T any] struct {
+type Root[T Aggregatable] struct {
 	snapshotThreshold snapshotThreshold
-	es                eventStream[T]
-	ss                snapshotStore[T]
+	es                EventStream[T]
+	ss                SnapshotStore[T]
 	qos               qos.QoS
 	pubsub            *nats.Conn
 }
 
-type snapshot[T any] struct {
+type snapshot[T Aggregatable] struct {
 	old       bool
 	Timestamp time.Time
 	MsgCount  messageCount
@@ -225,6 +200,7 @@ func (a *Root[T]) build(ctx context.Context, id ID[T]) (*snapshot[T], error) {
 func (a *Root[T]) Execute(ctx context.Context, idempKey string, command Command[T]) (CommandID[T], error) {
 
 	commandUUID := CommandID[T](uuid.NewSHA1(command.AggregateID().UUID(), []byte(idempKey)).String())
+
 	var err error
 
 	snap, err := a.build(ctx, command.AggregateID())

@@ -19,7 +19,6 @@ func Register(item any) {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	slog.Info("event registered", "type", t.Name())
 
 	if t.Kind() != reflect.Struct && t.Kind() != reflect.Interface {
 		panic("register: registered type must be struct or interface")
@@ -31,28 +30,34 @@ func Register(item any) {
 			slog.Error("registry: failed to deserialize", "type", t.Name(), "error", err)
 			panic(err)
 		}
+
 		return vt
 		//	var val V
 
 	}
-	ermu.Lock()
-	items[TypeNameFrom(item)] = ctor
-	ermu.Unlock()
+	tn := TypeNameFrom(item)
 
+	ermu.Lock()
+	items[tn] = ctor
+	ermu.Unlock()
+	slog.Info("event registered", "type", tn)
 }
 
 func TypeNameFrom(e any) string {
 	if strev, ok := e.(fmt.Stringer); ok {
+
 		return strev.String()
 	}
 
 	t := reflect.TypeOf(e)
 	switch t.Kind() {
+
 	case reflect.Struct:
 		return t.Name()
 	case reflect.Pointer:
 		return t.Elem().Name()
 	default:
+
 		panic("unsupported type")
 
 		//	json.Marshal()

@@ -33,7 +33,7 @@ const (
 	Memory
 )
 
-type eventStream[T any] struct {
+type eventStream[T aggregate.Aggregatable] struct {
 	dedupe    time.Duration
 	storeType StoreType
 	// TODO: impl partitioning
@@ -43,7 +43,7 @@ type eventStream[T any] struct {
 	js         jetstream.JetStream
 }
 
-func NewEventStream[T any](ctx context.Context, js jetstream.JetStream, opts ...Option[T]) *eventStream[T] {
+func NewEventStream[T aggregate.Aggregatable](ctx context.Context, js jetstream.JetStream, opts ...Option[T]) *eventStream[T] {
 	aname, bcname := aggregate.AggregateNameFromType[T]()
 
 	stream := &eventStream[T]{js: js, tname: aname, boundedCtx: bcname}

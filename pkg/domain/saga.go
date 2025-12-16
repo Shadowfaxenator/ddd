@@ -10,9 +10,9 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/qos"
 )
 
-type sagaHandlerFunc[E aggregate.Event[T], C aggregate.Command[U], T any, U any] func(event E) C
+type sagaHandlerFunc[E aggregate.Event[T], C aggregate.Command[U], T aggregate.Aggregatable, U aggregate.Aggregatable] func(event E) C
 
-type sagaHandler[E aggregate.Event[T], C aggregate.Command[U], T any, U any] struct {
+type sagaHandler[E aggregate.Event[T], C aggregate.Command[U], T aggregate.Aggregatable, U aggregate.Aggregatable] struct {
 	sub     aggregate.Projector[T]
 	cmd     aggregate.Executer[U]
 	handler sagaHandlerFunc[E, C, T, U]
@@ -26,15 +26,15 @@ func (sf *sagaHandler[E, C, T, U]) Handle(ctx context.Context, eventID aggregate
 
 }
 
-type sagaOption[E aggregate.Event[T], C aggregate.Command[U], T any, U any] func(*sagaHandler[E, C, T, U])
+type sagaOption[E aggregate.Event[T], C aggregate.Command[U], T aggregate.Aggregatable, U aggregate.Aggregatable] func(*sagaHandler[E, C, T, U])
 
-func WithOrdering[E aggregate.Event[T], C aggregate.Command[U], T any, U any](ot qos.Ordering) sagaOption[E, C, T, U] {
+func WithOrdering[E aggregate.Event[T], C aggregate.Command[U], T aggregate.Aggregatable, U aggregate.Aggregatable](ot qos.Ordering) sagaOption[E, C, T, U] {
 	return func(sh *sagaHandler[E, C, T, U]) {
 		sh.ot = ot
 	}
 }
 
-func SagaStep[E aggregate.Event[T], C aggregate.Command[U], T any, U any](ctx context.Context, sub aggregate.Projector[T], cmd aggregate.Executer[U], shf sagaHandlerFunc[E, C, T, U], opts ...sagaOption[E, C, T, U]) {
+func SagaStep[E aggregate.Event[T], C aggregate.Command[U], T aggregate.Aggregatable, U aggregate.Aggregatable](ctx context.Context, sub aggregate.Projector[T], cmd aggregate.Executer[U], shf sagaHandlerFunc[E, C, T, U], opts ...sagaOption[E, C, T, U]) {
 
 	sh := &sagaHandler[E, C, T, U]{
 		sub:     sub,

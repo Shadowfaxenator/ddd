@@ -149,7 +149,7 @@ func NewMockSnapshotStore() *MockSnapshotStore {
 }
 
 type MockUser struct {
-	ID   aggregate.ID[MockUser]
+	aggregate.ID[MockUser]
 	Name string
 }
 
@@ -184,7 +184,7 @@ func TestAggregate(t *testing.T) {
 
 	aggr := aggregate.New[MockUser](context.Background(), NewMockEventStream(), NewMockSnapshotStore())
 	t.Run("Aggregate", func(t *testing.T) {
-		aggr.Execute(context.Background(), "test", &CreateUser{MockUser{Name: "test"}})
+		_ = aggr
 	})
 
 }

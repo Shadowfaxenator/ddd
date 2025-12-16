@@ -25,7 +25,7 @@ const (
 	Memory
 )
 
-func NewSnapshotStore[T any](ctx context.Context, js jetstream.JetStream, opts ...Option[T]) *snapshotStore[T] {
+func NewSnapshotStore[T aggregate.Aggregatable](ctx context.Context, js jetstream.JetStream, opts ...Option[T]) *snapshotStore[T] {
 	aname, bname := aggregate.AggregateNameFromType[T]()
 	ss := &snapshotStore[T]{
 		tname:      aname,

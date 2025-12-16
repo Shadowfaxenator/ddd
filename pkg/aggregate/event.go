@@ -1,9 +1,9 @@
 package aggregate
 
-type EventID[T any] = ID[Event[T]]
+type EventID[T Aggregatable] = ID[Event[T]]
 
 // You can use EventError to create an error event that should be not stored to the event store.
-type EventError[T any] struct {
+type EventError[T Aggregatable] struct {
 	AggID  ID[T]
 	Reason string
 }
@@ -14,6 +14,6 @@ func (e EventError[T]) Error() string {
 
 func (e *EventError[T]) Apply(*T) {}
 
-type Event[T any] interface {
+type Event[T Aggregatable] interface {
 	Apply(*T)
 }
