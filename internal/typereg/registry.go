@@ -71,7 +71,7 @@ func GuardType(t any) string {
 	if _, ok := items[tname]; ok {
 		return tname
 	}
-	slog.Error("guard: no type found", "type", tname)
+	slog.Error("guard: no type found, register it first", "type", tname)
 	panic("unrecovered")
 }
 

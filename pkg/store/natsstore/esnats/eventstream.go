@@ -235,7 +235,7 @@ func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *aggr
 		mt, err := msg.Metadata()
 		if err != nil {
 			slog.Error("subscription metadata", "error", err)
-			slog.Warn("redelivering", "error", err)
+			slog.Warn("redelivering")
 			msg.Nak()
 			return
 		}
@@ -246,11 +246,17 @@ func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *aggr
 			Version: mt.Sequence.Stream,
 			Payload: msg.Data(),
 		}
+		var target *aggregate.InvariantViolationError
 		if err := handler(envel); err != nil {
-			slog.Warn("redelivering", "error", err)
-			msg.Nak()
-			return
+			if !errors.As(err, &target) {
+				slog.Warn("redelivering", "error", err)
+				msg.Nak()
+				return
+			} else {
+				slog.Warn("invariant violation", "reason", err.Error())
+			}
 		}
+
 		msg.Ack()
 
 	}, jetstream.ConsumeErrHandler(func(consumeCtx jetstream.ConsumeContext, err error) {}))

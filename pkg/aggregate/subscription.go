@@ -2,6 +2,7 @@ package aggregate
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/alekseev-bro/ddd/internal/typereg"
 	"github.com/alekseev-bro/ddd/pkg/qos"
@@ -44,17 +45,21 @@ type EventHandler[T Aggregatable] interface {
 }
 
 func (a *Root[T]) Project(ctx context.Context, h EventHandler[T], opts ...ProjOption) (Drainer, error) {
+	dn := typereg.TypeNameFrom(h)
 	params := &SubscribeParams{
-		DurableName: typereg.TypeNameFrom(h),
+		DurableName: dn,
 	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(params)
 		}
 	}
-
-	return a.es.Subscribe(ctx, func(envel *Envelope) error {
+	d, err := a.es.Subscribe(ctx, func(envel *Envelope) error {
 		ev := typereg.GetType(envel.Kind, envel.Payload)
 		return h.Handle(ctx, EventID[T](envel.ID.String()), ev.(Event[T]))
 	}, params)
+	if err == nil {
+		slog.Info("subscription created", "subscription", params.DurableName)
+	}
+	return d, nil
 }

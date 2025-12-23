@@ -30,6 +30,14 @@ const (
 	idempotancyWindow time.Duration = time.Minute * 2
 )
 
+type InvariantViolationError struct {
+	Err error
+}
+
+func (e InvariantViolationError) Error() string {
+	return e.Err.Error()
+}
+
 // AggregateNameFromType returns the aggregate name and bounded context name from the type T.
 func AggregateNameFromType[T Aggregatable]() (aname string, bctx string) {
 	t := reflect.TypeFor[T]()
@@ -208,11 +216,10 @@ func (a *Root[T]) Execute(ctx context.Context, idempKey string, command Command[
 		return commandUUID, fmt.Errorf("build aggrigate: %w", err)
 	}
 
-	evt := command.Execute(snap.Body)
+	evt, err := command.Execute(snap.Body)
 
-	if everr, ok := evt.(*EventError[T]); ok {
-		slog.Warn("command execution error", "error", everr.Reason, "aggregate_id", command.AggregateID())
-		return commandUUID, nil
+	if err != nil {
+		return commandUUID, &InvariantViolationError{Err: err}
 	}
 
 	b, err := serde.Serialize(evt)

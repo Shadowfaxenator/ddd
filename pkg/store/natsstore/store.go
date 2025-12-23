@@ -11,7 +11,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-func NewAggregate[T aggregate.Aggregatable](ctx context.Context, js jetstream.JetStream, opts ...option[T]) *aggregate.Root[T] {
+func NewAggregate[T aggregate.Aggregatable](ctx context.Context, js jetstream.JetStream, opts ...option[T]) domain.Aggregate[T] {
 	op := options[T]{}
 	for _, opt := range opts {
 		opt(&op)
