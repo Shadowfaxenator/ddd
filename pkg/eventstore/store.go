@@ -89,22 +89,15 @@ func New[T any](ctx context.Context, es EventStream[T], ss SnapshotStore[T], opt
 	return aggr
 }
 
-type Message struct {
-	ID      uuid.UUID
-	Version uint64
-	Kind    string
-	Payload []byte
-}
-
 // Updater is an interface that defines the Execute method for executing commands on an aggregate.
 // Each command is executed in a transactional manner, ensuring that the aggregate state is consistent.
 // Commands must implement the Command interface.
 type Updater[T any] interface {
-	Update(ctx context.Context, id ID[T], idempotencyKey string, modify command[T]) (EventID[T], error)
+	Update(ctx context.Context, id ID[T], parentEventID string, modify command[T]) ([]*Event[T], error)
 }
 
 type Creator[T any] interface {
-	Create(ctx context.Context, id ID[T], init command[T]) (ID[T], error)
+	Create(ctx context.Context, id ID[T], init command[T]) ([]*Event[T], error)
 }
 
 // EventProjector is an interface that defines the ProjectEvent method for projecting events on an aggregate.
@@ -126,16 +119,16 @@ type Drainer interface {
 	Drain() error
 }
 
-type subscriber interface {
-	Subscribe(ctx context.Context, handler func(envel *Message) error, params *SubscribeParams) (Drainer, error)
+type subscriber[T any] interface {
+	Subscribe(ctx context.Context, handler func(envel *Event[T]) error, params *SubscribeParams) (Drainer, error)
 }
 
 type ProjOption func(p *SubscribeParams)
 
 type EventStream[T any] interface {
-	Save(ctx context.Context, aggrID string, idempotencyKey string, msgs []*Message) error
-	Load(ctx context.Context, aggrID string, fromSeq uint64) ([]*Message, error)
-	subscriber
+	Save(ctx context.Context, aggrID string, msgs []*Event[T]) error
+	Load(ctx context.Context, aggrID string, fromSeq uint64) ([]*Event[T], error)
+	subscriber[T]
 }
 
 type SnapshotStore[T any] interface {
@@ -178,24 +171,21 @@ func (a *eventStore[T]) build(ctx context.Context, id ID[T]) (*aggregate[T], err
 		}
 	}
 
-	envelopes, err := a.es.Load(ctx, id.String(), snap.Version)
+	events, err := a.es.Load(ctx, id.String(), snap.Version)
 	if err != nil {
 		if !errors.Is(err, store.ErrNoAggregate) {
 			return nil, fmt.Errorf("buid %w", err)
 		}
 
 	}
-	if envelopes != nil {
-		for _, e := range envelopes {
-			ev := typereg.GetType(e.Kind, e.Payload)
-
-			ev.(Event[T]).Apply(snap.Body)
-
+	if events != nil {
+		for _, e := range events {
+			e.Body.Apply(snap.Body)
 		}
 
-		snap.Version = envelopes[len(envelopes)-1].Version
-		snap.MsgCount = snap.MsgCount + messageCount(len(envelopes))
-		if messageCount(len(envelopes)) >= messageCount(a.snapshotThreshold.numMsgs) && time.Since(snap.Timestamp) > a.snapshotThreshold.interval {
+		snap.Version = events[len(events)-1].Version
+		snap.MsgCount = snap.MsgCount + messageCount(len(events))
+		if messageCount(len(events)) >= messageCount(a.snapshotThreshold.numMsgs) && time.Since(snap.Timestamp) > a.snapshotThreshold.interval {
 			snap.old = true
 		}
 	}
@@ -212,84 +202,80 @@ type command[T any] func(*T) (Events[T], error)
 func (a *eventStore[T]) Create(
 	ctx context.Context, id ID[T],
 	initCmd command[T],
-) (ID[T], error) {
+) ([]*Event[T], error) {
 
 	evts, err := initCmd(new(T))
 	if err != nil {
-		return id, fmt.Errorf("init event: %w", err)
+		return nil, fmt.Errorf("init event: %w", err)
 	}
 	if evts == nil {
-		return id, nil
+		return nil, nil
 	}
-	msgs := make([]*Message, len(evts))
+	msgs := make([]*Event[T], len(evts))
+
 	for i, ev := range evts {
-		b, err := serde.Serialize(ev)
-		if err != nil {
-			slog.Error("command serialize", "error", err)
-			panic(err)
-		}
+
 		// Panics if event isn't registered
 		kind := typereg.GuardType(ev)
-		msgs[i] = &Message{
-			Version: 0,
-			Kind:    kind,
-			Payload: b,
+
+		msgs[i] = &Event[T]{
+			ID:          EventID[T](uuid.NewSHA1(id.UUID(), fmt.Appendf([]byte(id.String()), "%d", i))),
+			PrevVersion: 0,
+			Kind:        kind,
+			Body:        ev,
 		}
 	}
 
-	err = a.es.Save(ctx, id.String(), id.String(), msgs)
+	err = a.es.Save(ctx, id.String(), msgs)
 	if err != nil {
 		slog.Error("create save", "error", err.Error())
-		return id, fmt.Errorf("create: %w", err)
+		return nil, fmt.Errorf("create: %w", err)
 	}
 
-	return id, nil
+	return msgs, nil
 }
 
 // Update executes a command on the aggregate root.
 func (a *eventStore[T]) Update(
 	ctx context.Context, id ID[T],
-	idempKey string,
+	eventID string,
 	modify command[T],
-) (EventID[T], error) {
-	if idempKey == "" {
-		idempKey = uuid.New().String()
+) ([]*Event[T], error) {
+	if eventID == "" {
+		eventID = uuid.New().String()
 	}
-	eventID := EventID[T](uuid.NewSHA1(id.UUID(), []byte(idempKey)))
 
 	var err error
 
 	agg, err := a.build(ctx, id)
 	if err != nil {
-		return eventID, fmt.Errorf("build aggrigate: %w", err)
+		return nil, fmt.Errorf("build aggrigate: %w", err)
 	}
 
 	evts, err := modify(agg.Body)
 
 	if err != nil {
-		return eventID, &InvariantViolationError{Err: err}
+		return nil, &InvariantViolationError{Err: err}
 	}
 	if evts == nil {
-		return eventID, nil
+		return nil, nil
 	}
-	msgs := make([]*Message, len(evts))
+	msgs := make([]*Event[T], len(evts))
 	for i, ev := range evts {
-		b, err := serde.Serialize(ev)
-		if err != nil {
-			slog.Error("update serialize", "error", err)
-			panic(err)
-		}
+
 		// Panics if event isn't registered
 		kind := typereg.GuardType(ev)
-		msgs[i] = &Message{
-			Version: agg.Version,
-			Kind:    kind,
-			Payload: b,
+
+		msgs[i] = &Event[T]{
+			ID:          EventID[T](uuid.NewSHA1(id.UUID(), fmt.Appendf([]byte(eventID), "%d", i))),
+			PrevVersion: agg.Version,
+			Kind:        kind,
+			Body:        ev,
 		}
 	}
 
-	if err := a.es.Save(ctx, id.String(), eventID.String(), msgs); err != nil {
-		return eventID, fmt.Errorf("update save: %w", err)
+	if err := a.es.Save(ctx, id.String(), msgs); err != nil {
+		return nil, fmt.Errorf("update save: %w", err)
 	}
 
 	// Save snapshot if aggregate has more than snapshotThreshold messages
@@ -314,5 +300,5 @@ func (a *eventStore[T]) Update(
 
 	}
 
-	return eventID, nil
+	return msgs, nil
 }

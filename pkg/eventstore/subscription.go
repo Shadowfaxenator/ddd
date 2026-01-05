@@ -21,7 +21,7 @@ func WIthFilterByAggregateID[T Aggregate[T]](id ID[T]) ProjOption {
 	}
 }
 
-func WithFilterByEvent[E Event[T], T any, PT Aggregate[T]]() ProjOption {
+func WithFilterByEvent[E Applyer[T], T any, PT Aggregate[T]]() ProjOption {
 	return func(p *SubscribeParams) {
 		var ev E
 		p.Kind = append(p.Kind, typereg.TypeNameFrom(ev))
@@ -41,7 +41,7 @@ func WithQoS(qos qos.QoS) ProjOption {
 }
 
 type EventHandler[T any] interface {
-	Handle(ctx context.Context, eventID EventID[T], event Event[T]) error
+	Handle(ctx context.Context, eventID EventID[T], event Applyer[T]) error
 }
 
 func (a *eventStore[T]) ProjectEvent(ctx context.Context, h EventHandler[T], opts ...ProjOption) (Drainer, error) {
@@ -54,9 +54,9 @@ func (a *eventStore[T]) ProjectEvent(ctx context.Context, h EventHandler[T], opt
 			opt(params)
 		}
 	}
-	d, err := a.es.Subscribe(ctx, func(envel *Message) error {
-		ev := typereg.GetType(envel.Kind, envel.Payload)
-		return h.Handle(ctx, EventID[T](envel.ID), ev.(Event[T]))
+	d, err := a.es.Subscribe(ctx, func(event *Event[T]) error {
+
+		return h.Handle(ctx, EventID[T](event.ID), event.Body)
 	}, params)
 	if err == nil {
 		slog.Info("subscription created", "subscription", params.DurableName)

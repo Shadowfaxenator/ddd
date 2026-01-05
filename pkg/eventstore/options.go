@@ -18,7 +18,7 @@ func WithSnapshotThreshold[T any](numMsgs byte, interval time.Duration) Option[T
 	}
 }
 
-func WithEvent[E Event[T], T any]() Option[T] {
+func WithEvent[E Applyer[T], T any]() Option[T] {
 
 	return func(a *eventStore[T]) {
 		var zero E

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/alekseev-bro/ddd/internal/serde"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/store"
 
@@ -16,7 +16,6 @@ import (
 
 	"math"
 
-	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/synadia-io/orbit.go/jetstreamext"
@@ -82,27 +81,34 @@ func (s *eventStream[T]) streamName() string {
 func (s *eventStream[T]) allSubjects() string {
 	return fmt.Sprintf("%s.>", s.streamName())
 }
-func (s *eventStream[T]) subscribeSubject() string {
-	return fmt.Sprintf("sub.%s.>", s.streamName())
-}
 
-func (s *eventStream[T]) Save(ctx context.Context, aggrID string, idempotencyKey string, msgs []*eventstore.Message) error {
+func (s *eventStream[T]) Save(ctx context.Context, aggrID string, msgs []*eventstore.Event[T]) error {
 
 	if msgs == nil {
 		return nil
 	}
-
-	if len(msgs) == 1 {
-		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(aggrID), msgs[0].Kind)
-
+	nmsgs := make([]*nats.Msg, len(msgs))
+	for i, msg := range msgs {
+		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(aggrID), msg.Kind)
 		nmsg := nats.NewMsg(sub)
-		nmsg.Data = msgs[0].Payload
-		nmsg.Header.Add(jetstream.MsgIDHeader, idempotencyKey)
-		ack, err := s.js.PublishMsg(ctx, nmsg, jetstream.WithExpectLastSequenceForSubject(msgs[0].Version, s.allSubjectsForID(aggrID)))
+		b, err := serde.Serialize(msg.Body)
+		if err != nil {
+			slog.Error("command serialize", "error", err)
+			panic(err)
+		}
+		nmsg.Data = b
+		nmsg.Header.Add(jetstream.MsgIDHeader, msg.ID.String())
+		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqSubjHeader, s.allSubjectsForID(aggrID))
+		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqHeader, strconv.Itoa(int(msg.PrevVersion)))
+		nmsgs[i] = nmsg
+	}
+
+	if len(nmsgs) == 1 {
+		ack, err := s.js.PublishMsg(ctx, nmsgs[0])
 		if err != nil {
 			var seqerr *jetstream.APIError
 			if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
-				slog.Warn("occ", "version", msgs[0].Version, "name", s.subjectNameForID(aggrID))
+				slog.Warn("occ", "version", msgs[0].PrevVersion, "name", s.subjectNameForID(aggrID))
 			}
 			return fmt.Errorf("store event func: %w", err)
 		}
@@ -113,20 +119,7 @@ func (s *eventStream[T]) Save(ctx context.Context, aggrID string, idempotencyKey
 		slog.Info("event stored", "kind", msgs[0].Kind, "subject", s.subjectNameForID(aggrID), "stream", s.streamName())
 		return nil
 	}
-	nmsgs := make([]*nats.Msg, len(msgs))
 
-	for i, msg := range msgs {
-
-		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(aggrID), msg.Kind)
-		nmsg := nats.NewMsg(sub)
-		nmsg.Data = msg.Payload
-		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqSubjHeader, s.allSubjectsForID(aggrID))
-		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqHeader, strconv.Itoa(int(msg.Version)))
-		nmsgs[i] = nmsg
-
-	}
-
-	nmsgs[0].Header.Add(jetstream.MsgIDHeader, idempotencyKey)
 	_, err := jetstreamext.PublishMsgBatch(ctx, s.js, nmsgs, jetstreamext.BatchFlowControl{AckEvery: 1, AckTimeout: time.Second})
 	if err != nil {
 		var seqerr *jetstream.APIError
@@ -142,17 +135,8 @@ func (s *eventStream[T]) Save(ctx context.Context, aggrID string, idempotencyKey
 	return nil
 }
 
-func msgID(h nats.Header) uuid.UUID {
-	uup, err := uuid.Parse(h.Get(jetstream.MsgIDHeader))
-	if err != nil {
-		slog.Error("subscription uuid parse", "error", err, "value", jetstream.MsgIDHeader)
-		panic(err)
-	}
-	return uup
-}
+func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([]*eventstore.Event[T], error) {
 
-func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([]*eventstore.Message, error) {
-	var envelopes []*eventstore.Message
 	subj := s.allSubjectsForID(id)
 	msgs, err := jetstreamext.GetBatch(ctx,
 		s.js, s.streamName(), math.MaxInt, jetstreamext.GetBatchSubject(subj),
@@ -162,8 +146,10 @@ func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([
 	if err != nil {
 		return nil, fmt.Errorf("get events: %w", err)
 	}
-
+	var events []*eventstore.Event[T]
+	var prevEv *eventstore.Event[T]
 	for msg, err := range msgs {
+
 		if err != nil {
 			if errors.Is(err, jetstreamext.ErrNoMessages) {
 
@@ -171,18 +157,18 @@ func (s *eventStream[T]) Load(ctx context.Context, id string, version uint64) ([
 			}
 			return nil, fmt.Errorf("build func can't get msg batch: %w", err)
 		}
-		subjectParts := strings.Split(msg.Subject, ".")
 
-		envel := &eventstore.Message{
-			ID:      msgID(msg.Header),
-			Kind:    subjectParts[2],
-			Version: msg.Sequence,
-			Payload: msg.Data,
+		event := eventFromMsg[T](jsRawMsgAdapter{msg})
+		if prevEv == nil {
+			event.PrevVersion = version
+		} else {
+			event.PrevVersion = prevEv.Version
 		}
 
-		envelopes = append(envelopes, envel)
+		prevEv = event
+		events = append(events, event)
 	}
-	return envelopes, nil
+	return events, nil
 }
 
 type drainAdapter struct {
@@ -213,7 +199,7 @@ func aggrIDFromParams(params *eventstore.SubscribeParams) string {
 	return "*"
 }
 
-func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *eventstore.Message) error, params *eventstore.SubscribeParams) (eventstore.Drainer, error) {
+func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *eventstore.Event[T]) error, params *eventstore.SubscribeParams) (eventstore.Drainer, error) {
 
 	maxpend := maxAckPending
 	if params.QoS.Ordering == qos.Ordered {
@@ -232,14 +218,8 @@ func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *even
 		subs := make(drainList, len(filter))
 		for i, f := range filter {
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
-				seq, _ := strconv.Atoi(msg.Header.Get("Nats-Sequence"))
-				subjectParts := strings.Split(msg.Subject, ".")
-				handler(&eventstore.Message{
-					ID:      msgID(msg.Header),
-					Kind:    subjectParts[2],
-					Version: uint64(seq),
-					Payload: msg.Data,
-				})
+
+				handler(eventFromMsg[T](natsMessageAdapter{msg}))
 			})
 			if err != nil {
 				return nil, fmt.Errorf("at most once subscribe: %w", err)
@@ -261,22 +241,16 @@ func (e *eventStream[T]) Subscribe(ctx context.Context, handler func(event *even
 		panic(err)
 	}
 	ct, err := cons.Consume(func(msg jetstream.Msg) {
-		mt, err := msg.Metadata()
-		if err != nil {
-			slog.Error("subscription metadata", "error", err)
-			slog.Warn("redelivering")
-			msg.Nak()
-			return
-		}
-		subjectParts := strings.Split(msg.Subject(), ".")
-		envel := &eventstore.Message{
-			ID:      msgID(msg.Headers()),
-			Kind:    subjectParts[2],
-			Version: mt.Sequence.Stream,
-			Payload: msg.Data(),
-		}
+		// mt, err := msg.Metadata()
+		// if err != nil {
+		// 	slog.Error("subscription metadata", "error", err)
+		// 	slog.Warn("redelivering")
+		// 	msg.Nak()
+		// 	return
+		// }
+
 		var target *eventstore.InvariantViolationError
-		if err := handler(envel); err != nil {
+		if err := handler(eventFromMsg[T](natsJSMsgAdapter{msg})); err != nil {
 			if !errors.As(err, &target) {
 				slog.Warn("redelivering", "error", err)
 				msg.Nak()

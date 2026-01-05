@@ -32,7 +32,7 @@ func WithSnapshotThreshold[T any](numMsgs byte, interval time.Duration) option[T
 	}
 }
 
-func WithEvent[E eventstore.Event[T], T any, PT eventstore.Aggregate[T]]() option[T] {
+func WithEvent[E eventstore.Applyer[T], T any, PT eventstore.Aggregate[T]]() option[T] {
 
 	return func(o *options[T]) {
 		o.agOpts = append(o.agOpts, eventstore.WithEvent[E, T]())
