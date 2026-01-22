@@ -80,10 +80,6 @@ func WithDelimiter(delimiter string) typeNameFromOption {
 }
 
 func TypeNameFrom(e any, opts ...typeNameFromOption) string {
-	if strev, ok := e.(fmt.Stringer); ok {
-
-		return strev.String()
-	}
 	delim := "::"
 	for _, opt := range opts {
 		delim = string(opt)
@@ -95,7 +91,7 @@ func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	//	sep := strings.Split(t.PkgPath(), "/")
 	sha := sha1.New()
 	sha.Write([]byte(t.PkgPath()))
-	bctx := base64.RawURLEncoding.EncodeToString(sha.Sum(nil))
+	bctx := base64.RawURLEncoding.EncodeToString(sha.Sum(nil)[:5])
 	//bctx := sep[len(sep)-1]
 	switch t.Kind() {
 

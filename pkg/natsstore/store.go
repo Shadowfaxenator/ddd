@@ -21,7 +21,7 @@ func NewStore[T any, PT aggregate.PRoot[T]](ctx context.Context, js jetstream.Je
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	es := esnats.NewEventStream(ctx, js, fmt.Sprintf("aggregate-%s", typereg.TypeNameFor[T]()), cfg.esCfg)
+	es := esnats.NewEventStream(ctx, js, fmt.Sprintf("%s", typereg.TypeNameFor[T](typereg.WithDelimiter(":"))), cfg.esCfg)
 	ss := snapnats.NewSnapshotStore(ctx, js, typereg.TypeNameFor[T](typereg.WithDelimiter("-")), cfg.ssCfg)
 	return aggregate.NewStore(ctx, es, ss, cfg.agOpts...)
 }

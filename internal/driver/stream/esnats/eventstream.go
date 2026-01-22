@@ -202,6 +202,7 @@ func (e *eventStream) Subscribe(ctx context.Context, handler func(msg *aggregate
 	var filter []string
 	if params.Kind != nil {
 		for _, kind := range params.Kind {
+
 			filter = append(filter, fmt.Sprintf("%s.%s.%s", e.name, aggrIDFromParams(params), kind))
 		}
 	} else {
@@ -233,14 +234,16 @@ func (e *eventStream) Subscribe(ctx context.Context, handler func(msg *aggregate
 
 		return subs, nil
 	}
+
 	cons, err := e.js.CreateOrUpdateConsumer(ctx, e.name, jetstream.ConsumerConfig{
 		Durable:        params.DurableName,
 		FilterSubjects: filter,
 		DeliverPolicy:  jetstream.DeliverAllPolicy,
 		AckPolicy:      jetstream.AckExplicitPolicy,
 		MaxAckPending:  maxpend,
-		PriorityPolicy: jetstream.PriorityPolicyPinned,
-		PriorityGroups: []string{"sub"},
+		// PriorityPolicy: jetstream.PriorityPolicyPinned,
+		// PriorityGroups: []string{"sub"},
+		//PinnedTTL:      time.Second * 10,
 	})
 	if err != nil {
 		slog.Error("subscription create consumer", "error", err)
@@ -270,10 +273,12 @@ func (e *eventStream) Subscribe(ctx context.Context, handler func(msg *aggregate
 
 	}, jetstream.ConsumeErrHandler(func(consumeCtx jetstream.ConsumeContext, err error) {
 		slog.Error("subscription consume", "error", err)
-	}), jetstream.PullPriorityGroup("sub"))
+	}),
+	)
 	if err != nil {
 		panic(fmt.Errorf("subscription consume: %w", err))
 	}
+
 	return drainList{&drainAdapter{ConsumeContext: ct}}, nil
 
 }

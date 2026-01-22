@@ -11,11 +11,16 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/qos"
 )
 
+type nameForer interface {
+	NameFor(in any) (string, error)
+}
+
 type SubscribeParams struct {
 	DurableName string
 	Kind        []string
 	AggrID      string
 	QoS         qos.QoS
+	Reg         nameForer
 }
 
 func WithFilterByAggregateID(id ID) ProjOption {
@@ -25,11 +30,25 @@ func WithFilterByAggregateID(id ID) ProjOption {
 }
 
 func WithFilterByEvent[E Evolver[T], T any]() ProjOption {
-	if reflect.TypeFor[T]().Kind() != reflect.Struct {
-		panic("event type must be a struct")
+	var zero any
+	t := reflect.TypeFor[E]()
+	switch t.Kind() {
+	case reflect.Struct:
+		zero = new(E)
+	case reflect.Pointer:
+		var z E
+		zero = z
+	default:
+		panic(fmt.Sprintf("unsupported event type: %s", t.Name()))
 	}
+
 	return func(p *SubscribeParams) {
-		p.Kind = append(p.Kind, reflect.TypeFor[T]().Name())
+		name, err := p.Reg.NameFor(zero)
+		if err != nil {
+			slog.Error("filter by event", "error", err)
+			panic(err)
+		}
+		p.Kind = append(p.Kind, name)
 	}
 }
 
@@ -67,6 +86,7 @@ func (a *store[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts .
 
 	params := &SubscribeParams{
 		DurableName: dn,
+		Reg:         a.eventRegistry,
 	}
 	for _, opt := range opts {
 		if opt != nil {

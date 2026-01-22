@@ -42,12 +42,8 @@ type EventSerder[T any] interface {
 	Deserialize(string, []byte) (Evolver[T], error)
 }
 
-// SetTypeEncoder sets the default encoder for the aggregate,
-// encoder must be a Serder implementation.
-// Default is JSON.
-
 // NewStore creates a new aggregate root using the provided event stream and snapshot store.
-func NewStore[T any, PT PRoot[T]](ctx context.Context, es EventStream[T], ss SnapshotStore, opts ...StoreOption[T, PT]) *store[T, PT] {
+func NewStore[T any, PT PRoot[T]](ctx context.Context, es EventStream, ss SnapshotStore, opts ...StoreOption[T, PT]) *store[T, PT] {
 
 	eventReg := typereg.New()
 	eventCodec := codec.JSON
@@ -103,7 +99,7 @@ type Subscriber[T any] interface {
 }
 
 type Snapshot[T any] struct {
-	Aggregate *T
+	Aggregate *Aggregate[T]
 	Timestamp time.Time
 }
 
@@ -135,7 +131,7 @@ type StoredMsg struct {
 	Version
 }
 
-type EventStream[T any] interface {
+type EventStream interface {
 	Save(ctx context.Context, aggrID ID, expectedVersion uint64, msgs []Msg) ([]*StoredMsg, error)
 	Load(ctx context.Context, aggrID ID, fromSeq uint64) ([]*StoredMsg, error)
 	subscriber
@@ -149,8 +145,6 @@ type SnapshotStore interface {
 // Aggregate store type it implements the Aggregate interface.
 type PRoot[T any] interface {
 	*T
-	VersionSetter
-	Root
 }
 
 type typeRegistry interface {
@@ -161,7 +155,7 @@ type typeRegistry interface {
 
 type store[T any, PT PRoot[T]] struct {
 	storeConfig
-	es            EventStream[T]
+	es            EventStream
 	ss            SnapshotStore
 	qos           qos.QoS
 	pubsub        *nats.Conn
@@ -184,14 +178,15 @@ type Root interface {
 	GuardExistance() error
 }
 
-type Aggregate struct {
+type Aggregate[T any] struct {
 	ID      ID
 	version Version
 	Exists  bool
 	Deleted bool
+	State   T
 }
 
-func (a *Aggregate) GuardExistance() error {
+func (a *Aggregate[T]) GuardExistance() error {
 	if !a.Exists {
 		return ErrAggregateNotExists
 	}
@@ -201,11 +196,11 @@ func (a *Aggregate) GuardExistance() error {
 	return nil
 }
 
-func (a *Aggregate) Version() Version {
+func (a *Aggregate[T]) Version() Version {
 	return a.version
 }
 
-func (a *Aggregate) setVersion(v Version) {
+func (a *Aggregate[T]) setVersion(v Version) {
 	a.version = v
 }
 
@@ -221,8 +216,10 @@ func (a *Aggregate) setVersion(v Version) {
 // 	a.events = append(a.events, ev)
 // }
 
-func (a *store[T, PT]) Build(ctx context.Context, id ID, sn *Snapshot[T]) (PT, error) {
-	aggr := PT(new(T))
+func (a *store[T, PT]) build(ctx context.Context, id ID, sn *Snapshot[PT]) (*Aggregate[PT], error) {
+	aggr := &Aggregate[PT]{
+		State: PT(new(T)),
+	}
 
 	if sn != nil {
 		aggr = sn.Aggregate
@@ -245,7 +242,7 @@ func (a *store[T, PT]) Build(ctx context.Context, id ID, sn *Snapshot[T]) (PT, e
 		if err != nil {
 			return nil, fmt.Errorf("build: %w", err)
 		}
-		ev.Evolve(aggr)
+		ev.Evolve(aggr.State)
 		aggr.setVersion(e.Version)
 	}
 
@@ -265,9 +262,9 @@ func (a *store[T, PT]) Update(
 	idempKey := idempotanceKeyFromCtxOrRandom(ctx)
 	var err error
 	var invError error
-	var state PT
+	var aggr *Aggregate[PT]
 	// if id.String() != idempKey {
-	sn := new(Snapshot[T])
+	sn := new(Snapshot[PT])
 	b, err := a.ss.Load(ctx, []byte(id.String()))
 	if err != nil {
 		if !errors.Is(err, ErrNoSnapshot) {
@@ -282,16 +279,16 @@ func (a *store[T, PT]) Update(
 		}
 	}
 
-	state, err = a.Build(ctx, id, sn)
+	aggr, err = a.build(ctx, id, sn)
 	if err != nil {
 		return nil, fmt.Errorf("update: %w", err)
 	}
 	//	}
 	var evts Events[T]
 	var expVersion uint64
-	if state != nil {
-		evts, err = modify(state)
-		expVersion = state.Version().Sequence
+	if aggr != nil {
+		evts, err = modify(aggr.State)
+		expVersion = aggr.Version().Sequence
 	} else {
 		evts, err = modify(new(T))
 	}
@@ -342,8 +339,8 @@ func (a *store[T, PT]) Update(
 	if numevents%int(a.SnapthotMsgThreshold) == 0 && time.Since(sn.Timestamp) > a.SnapshotMaxInterval {
 
 		go func() {
-			snap := &Snapshot[T]{
-				Aggregate: state,
+			snap := &Snapshot[PT]{
+				Aggregate: aggr,
 				Timestamp: time.Now(),
 			}
 			b, err := a.snapshotCodec.Marshal(snap)
@@ -356,7 +353,7 @@ func (a *store[T, PT]) Update(
 				slog.Error("snapshot save", "error", err.Error())
 				return
 			}
-			slog.Info("snapshot saved", "sequence", state.Version().Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", state.Version().Timestamp)
+			slog.Info("snapshot saved", "sequence", aggr.Version().Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", aggr.Version().Timestamp)
 
 		}()
 
