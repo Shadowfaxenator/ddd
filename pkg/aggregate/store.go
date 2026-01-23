@@ -11,6 +11,7 @@ import (
 
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/qos"
+	"github.com/alekseev-bro/ddd/pkg/repo"
 
 	"github.com/alekseev-bro/ddd/internal/serde"
 	"github.com/alekseev-bro/ddd/internal/typereg"
@@ -43,7 +44,7 @@ type EventSerder[T any] interface {
 }
 
 // NewStore creates a new aggregate root using the provided event stream and snapshot store.
-func NewStore[T any, PT PRoot[T]](ctx context.Context, es EventStream, ss SnapshotStore, opts ...StoreOption[T, PT]) *store[T, PT] {
+func NewStore[T any, PT PRoot[T]](ctx context.Context, es eventStream, ss snapshotStore, opts ...StoreOption[T, PT]) *store[T, PT] {
 
 	eventReg := typereg.New()
 	eventCodec := codec.JSON
@@ -98,11 +99,6 @@ type Subscriber[T any] interface {
 	Subscribe(ctx context.Context, h EventsHandler[T], opts ...ProjOption) (Drainer, error)
 }
 
-type Snapshot[T any] struct {
-	Aggregate *Aggregate[T]
-	Timestamp time.Time
-}
-
 // All aggregates must implement the Store interface.
 type Store[T any, PT PRoot[T]] interface {
 	Subscriber[T]
@@ -115,31 +111,20 @@ type Drainer interface {
 }
 
 type subscriber interface {
-	Subscribe(ctx context.Context, handler func(msg *StoredMsg) error, params *SubscribeParams) (Drainer, error)
+	Subscribe(ctx context.Context, handler func(msg *repo.StoredMsg) error, params *SubscribeParams) (Drainer, error)
 }
 
 type ProjOption func(p *SubscribeParams)
 
-type Msg struct {
-	ID   ID
-	Body []byte
-	Kind string
-}
-
-type StoredMsg struct {
-	Msg
-	Version
-}
-
-type EventStream interface {
-	Save(ctx context.Context, aggrID ID, expectedVersion uint64, msgs []Msg) ([]*StoredMsg, error)
-	Load(ctx context.Context, aggrID ID, fromSeq uint64) ([]*StoredMsg, error)
+type eventStream interface {
+	Save(ctx context.Context, aggrID ID, expectedVersion uint64, msgs []repo.Msg) ([]*repo.StoredMsg, error)
+	Load(ctx context.Context, aggrID ID, fromSeq uint64) ([]*repo.StoredMsg, error)
 	subscriber
 }
 
-type SnapshotStore interface {
+type snapshotStore interface {
 	Save(ctx context.Context, key []byte, value []byte) error
-	Load(ctx context.Context, key []byte) ([]byte, error)
+	Load(ctx context.Context, key []byte) (*repo.Snapshot, error)
 }
 
 // Aggregate store type it implements the Aggregate interface.
@@ -155,8 +140,8 @@ type typeRegistry interface {
 
 type store[T any, PT PRoot[T]] struct {
 	storeConfig
-	es            EventStream
-	ss            SnapshotStore
+	es            eventStream
+	ss            snapshotStore
 	qos           qos.QoS
 	pubsub        *nats.Conn
 	snapshotCodec codec.Codec
@@ -164,44 +149,11 @@ type store[T any, PT PRoot[T]] struct {
 	eventRegistry typeRegistry
 }
 
-type Version struct {
+type aggregate[T any] struct {
+	ID        ID
 	Sequence  uint64
 	Timestamp time.Time
-}
-
-type VersionSetter interface {
-	setVersion(v Version)
-}
-
-type Root interface {
-	Version() Version
-	GuardExistance() error
-}
-
-type Aggregate[T any] struct {
-	ID      ID
-	version Version
-	Exists  bool
-	Deleted bool
-	State   T
-}
-
-func (a *Aggregate[T]) GuardExistance() error {
-	if !a.Exists {
-		return ErrAggregateNotExists
-	}
-	if a.Deleted {
-		return ErrAggregateDeleted
-	}
-	return nil
-}
-
-func (a *Aggregate[T]) Version() Version {
-	return a.version
-}
-
-func (a *Aggregate[T]) setVersion(v Version) {
-	a.version = v
+	State     T
 }
 
 // func (a *Aggregate) needSnapshot(maxmsgs byte, maxinterval time.Duration) bool {
@@ -216,16 +168,20 @@ func (a *Aggregate[T]) setVersion(v Version) {
 // 	a.events = append(a.events, ev)
 // }
 
-func (a *store[T, PT]) build(ctx context.Context, id ID, sn *Snapshot[PT]) (*Aggregate[PT], error) {
-	aggr := &Aggregate[PT]{
+func (a *store[T, PT]) build(ctx context.Context, id ID, sn *repo.Snapshot) (*aggregate[PT], error) {
+	aggr := &aggregate[PT]{
 		State: PT(new(T)),
 	}
 
 	if sn != nil {
-		aggr = sn.Aggregate
+		var body aggregate[PT]
+		if err := a.snapshotCodec.Unmarshal(sn.Body, &body); err != nil {
+			return nil, fmt.Errorf("build: %w", err)
+		}
+		aggr = &body
 	}
 
-	events, err := a.es.Load(ctx, id, aggr.Version().Sequence)
+	events, err := a.es.Load(ctx, id, aggr.Sequence)
 	if err != nil {
 		if errors.Is(err, ErrNoAggregate) {
 			if sn == nil {
@@ -243,7 +199,7 @@ func (a *store[T, PT]) build(ctx context.Context, id ID, sn *Snapshot[PT]) (*Agg
 			return nil, fmt.Errorf("build: %w", err)
 		}
 		ev.Evolve(aggr.State)
-		aggr.setVersion(e.Version)
+		aggr.Sequence = e.Sequence
 	}
 
 	return aggr, nil
@@ -262,21 +218,15 @@ func (a *store[T, PT]) Update(
 	idempKey := idempotanceKeyFromCtxOrRandom(ctx)
 	var err error
 	var invError error
-	var aggr *Aggregate[PT]
+	var aggr *aggregate[PT]
 	// if id.String() != idempKey {
-	sn := new(Snapshot[PT])
-	b, err := a.ss.Load(ctx, []byte(id.String()))
+	sn := new(repo.Snapshot)
+	sn, err = a.ss.Load(ctx, []byte(id.String()))
 	if err != nil {
 		if !errors.Is(err, ErrNoSnapshot) {
 			return nil, fmt.Errorf("update: %w", err)
 		}
 		sn = nil
-	}
-
-	if b != nil {
-		if err := a.snapshotCodec.Unmarshal(b, sn); err != nil {
-			return nil, fmt.Errorf("update: %w", err)
-		}
 	}
 
 	aggr, err = a.build(ctx, id, sn)
@@ -288,7 +238,7 @@ func (a *store[T, PT]) Update(
 	var expVersion uint64
 	if aggr != nil {
 		evts, err = modify(aggr.State)
-		expVersion = aggr.Version().Sequence
+		expVersion = aggr.Sequence
 	} else {
 		evts, err = modify(new(T))
 	}
@@ -299,7 +249,7 @@ func (a *store[T, PT]) Update(
 		return nil, invError
 	}
 	numevents := len(evts)
-	msgs := make([]Msg, numevents)
+	msgs := make([]repo.Msg, numevents)
 	for i, ev := range evts {
 
 		kind, err := a.eventRegistry.NameFor(ev)
@@ -313,8 +263,8 @@ func (a *store[T, PT]) Update(
 			panic(err)
 
 		}
-		msgs[i] = Msg{
-			ID:   ID(uuid.NewSHA1(id.UUID(), fmt.Appendf([]byte(idempKey), "%d", i))),
+		msgs[i] = repo.Msg{
+			ID:   uuid.NewSHA1(id.UUID(), fmt.Appendf([]byte(idempKey), "%d", i)).String(),
 			Kind: kind,
 			Body: b,
 		}
@@ -325,12 +275,17 @@ func (a *store[T, PT]) Update(
 		return nil, fmt.Errorf("update save: %w", err)
 	}
 	events := make([]*Event[T], len(storedMsgs))
+
 	for i, msg := range storedMsgs {
+		parid, err := uuid.Parse(msg.ID)
+		if err != nil {
+			panic(err)
+		}
 		events[i] = &Event[T]{
-			ID:      ID(msg.ID),
-			Kind:    msg.Kind,
-			Body:    evts[i],
-			Version: msg.Version.Sequence,
+			ID:       ID(parid),
+			Kind:     msg.Kind,
+			Body:     evts[i],
+			Sequence: msg.Sequence,
 		}
 	}
 
@@ -339,24 +294,15 @@ func (a *store[T, PT]) Update(
 	if numevents%int(a.SnapthotMsgThreshold) == 0 && time.Since(sn.Timestamp) > a.SnapshotMaxInterval {
 
 		go func() {
-			snap := &Snapshot[PT]{
-				Aggregate: aggr,
-				Timestamp: time.Now(),
-			}
-			b, err := a.snapshotCodec.Marshal(snap)
-			if err != nil {
-				slog.Error("snapshot serialize", "error", err)
-				panic(err)
-			}
+			b, err := a.snapshotCodec.Marshal(aggr)
 			err = a.ss.Save(ctx, []byte(id.String()), b)
 			if err != nil {
 				slog.Error("snapshot save", "error", err.Error())
 				return
 			}
-			slog.Info("snapshot saved", "sequence", aggr.Version().Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", aggr.Version().Timestamp)
+			slog.Info("snapshot saved", "sequence", aggr.Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", aggr.Timestamp)
 
 		}()
-
 	}
 
 	return events, invError

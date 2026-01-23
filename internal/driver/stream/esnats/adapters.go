@@ -5,9 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alekseev-bro/ddd/pkg/aggregate"
+	"github.com/alekseev-bro/ddd/pkg/repo"
 
-	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -103,24 +102,20 @@ func (n natsJSMsgAdapter) Seq() uint64 {
 	return mt.Sequence.Stream
 }
 
-func eventFromMsg(msg natsMessage) *aggregate.StoredMsg {
+func eventFromMsg(msg natsMessage) *repo.StoredMsg {
 
-	mid, err := uuid.Parse(msg.Headers().Get(jetstream.MsgIDHeader))
-	if err != nil {
-		slog.Error("failed to parse uuid", "error", err)
-		panic("failed to parse uuid")
-	}
 	subjectParts := strings.Split(msg.Subject(), ".")
 	kind := subjectParts[2]
 
 	//	ev := typereg.GetType(kind, msg.Data())
 
-	return &aggregate.StoredMsg{
-		Msg: aggregate.Msg{
-			ID:   aggregate.ID(mid),
+	return &repo.StoredMsg{
+		Msg: repo.Msg{
+			ID:   msg.Headers().Get(jetstream.MsgIDHeader),
 			Kind: kind,
 			Body: msg.Data(),
 		},
-		Version: aggregate.Version{Sequence: msg.Seq(), Timestamp: msg.Timestamp()},
+		Sequence:  msg.Seq(),
+		Timestamp: msg.Timestamp(),
 	}
 }

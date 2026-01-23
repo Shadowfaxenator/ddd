@@ -9,6 +9,7 @@ import (
 	"github.com/alekseev-bro/ddd/internal/typereg"
 
 	"github.com/alekseev-bro/ddd/pkg/qos"
+	"github.com/alekseev-bro/ddd/pkg/repo"
 )
 
 type nameForer interface {
@@ -93,7 +94,7 @@ func (a *store[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts .
 			opt(params)
 		}
 	}
-	d, err := a.es.Subscribe(ctx, func(msg *StoredMsg) error {
+	d, err := a.es.Subscribe(ctx, func(msg *repo.StoredMsg) error {
 		// TODO: implement panic recovery
 		ev, err := a.eventSerder.Deserialize(msg.Kind, msg.Body)
 		if err != nil {

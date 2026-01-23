@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
+	"github.com/alekseev-bro/ddd/pkg/repo"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -50,7 +51,7 @@ func (s *snapshotStore) Save(ctx context.Context, key []byte, value []byte) erro
 	return err
 }
 
-func (s *snapshotStore) Load(ctx context.Context, key []byte) ([]byte, error) {
+func (s *snapshotStore) Load(ctx context.Context, key []byte) (*repo.Snapshot, error) {
 
 	v, err := s.kv.Get(ctx, string(key))
 	if err != nil {
@@ -60,5 +61,9 @@ func (s *snapshotStore) Load(ctx context.Context, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return v.Value(), nil
+	snap := &repo.Snapshot{
+		Body:      v.Value(),
+		Timestamp: v.Created(),
+	}
+	return snap, nil
 }

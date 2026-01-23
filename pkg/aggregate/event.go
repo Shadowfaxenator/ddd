@@ -38,10 +38,10 @@ func IdempotancyKeyFromContext(ctx context.Context) string {
 }
 
 type Event[T any] struct {
-	ID      ID
-	Kind    string
-	Version uint64
-	Body    Evolver[T]
+	ID       ID
+	Kind     string
+	Sequence uint64
+	Body     Evolver[T]
 }
 
 func (e *Event[T]) Evolve(aggr *T) {

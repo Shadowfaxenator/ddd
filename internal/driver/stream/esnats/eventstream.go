@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/qos"
+	"github.com/alekseev-bro/ddd/pkg/repo"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
 
@@ -74,7 +75,7 @@ func (s *eventStream) allSubjects() string {
 	return fmt.Sprintf("%s.>", s.name)
 }
 
-func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSequence uint64, msgs []aggregate.Msg) ([]*aggregate.StoredMsg, error) {
+func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSequence uint64, msgs []repo.Msg) ([]*repo.StoredMsg, error) {
 
 	if msgs == nil {
 		return nil, nil
@@ -85,7 +86,7 @@ func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSeq
 		nmsg := nats.NewMsg(sub)
 
 		nmsg.Data = msg.Body
-		nmsg.Header.Add(jetstream.MsgIDHeader, msg.ID.String())
+		nmsg.Header.Add(jetstream.MsgIDHeader, msg.ID)
 		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqSubjHeader, s.allSubjectsForID(aggrID.String()))
 		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqHeader, strconv.Itoa(int(expectedSequence)))
 		nmsgs[i] = nmsg
@@ -106,11 +107,12 @@ func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSeq
 		}
 
 		slog.Info("event stored", "kind", msgs[0].Kind, "subject", s.subjectNameForID(aggrID.String()), "stream", s.name)
-		msgs := []*aggregate.StoredMsg{
-			&aggregate.StoredMsg{
-				Msg: aggregate.Msg{ID: aggrID, Kind: msgs[0].Kind}, Version: aggregate.Version{Sequence: ack.Sequence},
-			}}
-
+		msgs := []*repo.StoredMsg{
+			&repo.StoredMsg{
+				Msg:      repo.Msg{ID: aggrID.String(), Kind: msgs[0].Kind},
+				Sequence: ack.Sequence,
+			},
+		}
 		return msgs, nil
 	}
 
@@ -122,11 +124,11 @@ func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSeq
 		}
 		return nil, fmt.Errorf("save: %w", err)
 	}
-	outmsgs := make([]*aggregate.StoredMsg, len(msgs))
+	outmsgs := make([]*repo.StoredMsg, len(msgs))
 	for i, msg := range msgs {
-
-		outmsgs[i] = &aggregate.StoredMsg{
-			Msg: aggregate.Msg{ID: aggrID, Kind: msgs[0].Kind}, Version: aggregate.Version{Sequence: batchAck.Sequence},
+		outmsgs[i] = &repo.StoredMsg{
+			Msg:      msg,
+			Sequence: batchAck.Sequence,
 		}
 		slog.Info("event stored", "kind", msg.Kind, "subject", s.subjectNameForID(aggrID.String()), "stream", s.name)
 	}
@@ -134,7 +136,7 @@ func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSeq
 	return outmsgs, nil
 }
 
-func (s *eventStream) Load(ctx context.Context, aggrID aggregate.ID, fromSeq uint64) ([]*aggregate.StoredMsg, error) {
+func (s *eventStream) Load(ctx context.Context, aggrID aggregate.ID, fromSeq uint64) ([]*repo.StoredMsg, error) {
 
 	subj := s.allSubjectsForID(aggrID.String())
 	msgs, err := jetstreamext.GetBatch(ctx,
@@ -145,7 +147,7 @@ func (s *eventStream) Load(ctx context.Context, aggrID aggregate.ID, fromSeq uin
 	if err != nil {
 		return nil, fmt.Errorf("get events: %w", err)
 	}
-	var evts []*aggregate.StoredMsg
+	var evts []*repo.StoredMsg
 	for msg, err := range msgs {
 
 		if err != nil {
@@ -192,7 +194,7 @@ func aggrIDFromParams(params *aggregate.SubscribeParams) string {
 	return "*"
 }
 
-func (e *eventStream) Subscribe(ctx context.Context, handler func(msg *aggregate.StoredMsg) error, params *aggregate.SubscribeParams) (aggregate.Drainer, error) {
+func (e *eventStream) Subscribe(ctx context.Context, handler func(msg *repo.StoredMsg) error, params *aggregate.SubscribeParams) (aggregate.Drainer, error) {
 
 	maxpend := maxAckPending
 	if params.QoS.Ordering == qos.Ordered {
