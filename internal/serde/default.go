@@ -9,6 +9,11 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/codec"
 )
 
+type Serder[T any] interface {
+	Serialize(T) ([]byte, error)
+	Deserialize(string, []byte) (T, error)
+}
+
 type Creator interface {
 	Create(name string) (any, error)
 }

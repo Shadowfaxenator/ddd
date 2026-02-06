@@ -79,6 +79,12 @@ func WithDelimiter(delimiter string) typeNameFromOption {
 	return typeNameFromOption(delimiter)
 }
 
+type TypeRegistry interface {
+	Register(tname string, c func() any)
+	NameFor(in any) (string, error)
+	Create(name string) (any, error)
+}
+
 func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	delim := "::"
 	for _, opt := range opts {

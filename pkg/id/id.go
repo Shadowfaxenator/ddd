@@ -1,0 +1,46 @@
+package id
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/sony/sonyflake/v2"
+)
+
+var sf *sonyflake.Sonyflake
+
+func init() {
+
+	var err error
+	sf, err = sonyflake.New(sonyflake.Settings{
+		BitsSequence: 12,
+		TimeUnit:     2 * time.Millisecond,
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
+func New() int64 {
+
+	id, err := sf.NextID()
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+func MustParseIDFromString(s string) ID {
+	id, err := strconv.Atoi(s)
+	if err != nil {
+		panic(err)
+	}
+	return ID(id)
+}
+
+type ID int64
+
+func (i ID) String() string {
+
+	return strconv.Itoa(int(i))
+}

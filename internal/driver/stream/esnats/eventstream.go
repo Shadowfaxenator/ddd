@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/alekseev-bro/ddd/pkg/qos"
-	"github.com/alekseev-bro/ddd/pkg/repo"
-
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
+	"github.com/alekseev-bro/ddd/pkg/eventstore"
+	"github.com/alekseev-bro/ddd/pkg/qos"
+	"github.com/alekseev-bro/ddd/pkg/stream"
 
 	"math"
 
@@ -22,6 +22,7 @@ import (
 
 const (
 	maxAckPending int = 1000
+	eventIDHeader     = "X-Event-ID"
 )
 
 type StoreType jetstream.StorageType
@@ -31,7 +32,7 @@ const (
 	Memory
 )
 
-type eventStream struct {
+type eventStreamDriver struct {
 	name string
 	EventStreamConfig
 	// TODO: impl partitioning
@@ -42,11 +43,11 @@ const (
 	defaultDeduplication time.Duration = time.Minute * 2
 )
 
-func NewEventStream(ctx context.Context, js jetstream.JetStream, name string, cfg EventStreamConfig) *eventStream {
+func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg EventStreamConfig) *eventStreamDriver {
 	if cfg.Deduplication == 0 {
 		cfg.Deduplication = defaultDeduplication
 	}
-	stream := &eventStream{name: name, js: js, EventStreamConfig: cfg}
+	stream := &eventStreamDriver{name: name, js: js, EventStreamConfig: cfg}
 
 	_, err := stream.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Subjects:           []string{stream.allSubjects()},
@@ -64,31 +65,36 @@ func NewEventStream(ctx context.Context, js jetstream.JetStream, name string, cf
 	return stream
 }
 
-func (s *eventStream) subjectNameForID(agrid string) string {
+func (s *eventStreamDriver) subjectNameForID(agrid string) string {
 	return fmt.Sprintf("%s.%s", s.name, agrid)
 }
-func (s *eventStream) allSubjectsForID(agrid string) string {
+func (s *eventStreamDriver) allSubjectsForID(agrid string) string {
 	return fmt.Sprintf("%s.%s.>", s.name, agrid)
 }
 
-func (s *eventStream) allSubjects() string {
+func (s *eventStreamDriver) allSubjects() string {
 	return fmt.Sprintf("%s.>", s.name)
 }
 
-func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSequence uint64, msgs []repo.Msg) ([]*repo.StoredMsg, error) {
-
+func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotancyKey int64) ([]stream.MsgMetadata, error) {
+	strAggrID := strconv.FormatInt(aggrID, 10)
 	if msgs == nil {
 		return nil, nil
 	}
+
 	nmsgs := make([]*nats.Msg, len(msgs))
 	for i, msg := range msgs {
-		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(aggrID.String()), msg.Kind)
+		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
 		nmsg := nats.NewMsg(sub)
 
+		if idempotancyKey != 0 && i == 0 {
+			nmsg.Header.Add(jetstream.MsgIDHeader, strconv.FormatInt(idempotancyKey, 10))
+		}
 		nmsg.Data = msg.Body
-		nmsg.Header.Add(jetstream.MsgIDHeader, msg.ID)
-		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqSubjHeader, s.allSubjectsForID(aggrID.String()))
-		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqHeader, strconv.Itoa(int(expectedSequence)))
+		nmsg.Header.Add(eventIDHeader, strconv.FormatInt(msg.ID, 10))
+
+		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqSubjHeader, s.allSubjectsForID(strAggrID))
+		nmsg.Header.Add(jetstream.ExpectedLastSubjSeqHeader, strconv.FormatUint(expectedSequence, 10))
 		nmsgs[i] = nmsg
 	}
 
@@ -97,19 +103,20 @@ func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSeq
 		if err != nil {
 			var seqerr *jetstream.APIError
 			if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
-				slog.Warn("occ", "version", expectedSequence, "name", s.subjectNameForID(aggrID.String()))
+				slog.Warn("occ", "version", expectedSequence, "name", s.subjectNameForID(strAggrID))
 			}
 			return nil, fmt.Errorf("store event func: %w", err)
 		}
+		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msgs[0].Kind)
 		if ack.Duplicate {
-			slog.Warn("duplicate event not stored", "kind", msgs[0].Kind, "subject", s.subjectNameForID(aggrID.String()), "stream", s.name)
+			slog.Warn("duplicate event not stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
 			return nil, nil
 		}
 
-		slog.Info("event stored", "kind", msgs[0].Kind, "subject", s.subjectNameForID(aggrID.String()), "stream", s.name)
-		msgs := []*repo.StoredMsg{
-			&repo.StoredMsg{
-				Msg:      repo.Msg{ID: aggrID.String(), Kind: msgs[0].Kind},
+		slog.Info("event stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
+		msgs := []stream.MsgMetadata{
+			{
+				MsgID:    msgs[0].ID,
 				Sequence: ack.Sequence,
 			},
 		}
@@ -120,50 +127,52 @@ func (s *eventStream) Save(ctx context.Context, aggrID aggregate.ID, expectedSeq
 	if err != nil {
 		var seqerr *jetstream.APIError
 		if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
-			slog.Warn("occ", "name", s.subjectNameForID(aggrID.String()))
+			slog.Warn("occ", "name", s.subjectNameForID(strAggrID))
 		}
 		return nil, fmt.Errorf("save: %w", err)
 	}
-	outmsgs := make([]*repo.StoredMsg, len(msgs))
+	outmsgs := make([]stream.MsgMetadata, len(msgs))
 	for i, msg := range msgs {
-		outmsgs[i] = &repo.StoredMsg{
-			Msg:      msg,
+		outmsgs[i] = stream.MsgMetadata{
+			MsgID:    msg.ID,
 			Sequence: batchAck.Sequence,
 		}
-		slog.Info("event stored", "kind", msg.Kind, "subject", s.subjectNameForID(aggrID.String()), "stream", s.name)
+		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
+		slog.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
 	}
 
 	return outmsgs, nil
 }
 
-func (s *eventStream) Load(ctx context.Context, aggrID aggregate.ID, fromSeq uint64) ([]*repo.StoredMsg, error) {
-
-	subj := s.allSubjectsForID(aggrID.String())
+func (s *eventStreamDriver) Load(ctx context.Context, aggrID int64, fromSeq uint64, handler func(*stream.StoredMsg) error) error {
+	strAggrID := strconv.FormatInt(aggrID, 10)
+	subj := s.allSubjectsForID(strAggrID)
 	msgs, err := jetstreamext.GetBatch(ctx,
 		s.js, s.name, math.MaxInt, jetstreamext.GetBatchSubject(subj),
 		jetstreamext.GetBatchSeq(fromSeq+1))
 	//fmt.Println(time.Since(start))
 
 	if err != nil {
-		return nil, fmt.Errorf("get events: %w", err)
+		return fmt.Errorf("get events: %w", err)
 	}
-	var evts []*repo.StoredMsg
+
 	for msg, err := range msgs {
 
 		if err != nil {
 			if errors.Is(err, jetstreamext.ErrNoMessages) {
 
-				return nil, aggregate.ErrNoAggregate
+				return eventstore.ErrNoAggregate
 			}
-			return nil, fmt.Errorf("build func can't get msg batch: %w", err)
+			return fmt.Errorf("build func can't get msg batch: %w", err)
 		}
 
-		event := eventFromMsg(jsRawMsgAdapter{msg})
+		if err := handler(streamMsgFromNatsMsg(jsRawMsgAdapter{msg})); err != nil {
+			return err
+		}
 
-		evts = append(evts, event)
 	}
 
-	return evts, nil
+	return nil
 }
 
 type drainAdapter struct {
@@ -175,7 +184,7 @@ func (d *drainAdapter) Drain() error {
 	return nil
 }
 
-type drainList []aggregate.Drainer
+type drainList []stream.Drainer
 
 func (d drainList) Drain() error {
 	for _, drainer := range d {
@@ -186,7 +195,7 @@ func (d drainList) Drain() error {
 	return nil
 }
 
-func aggrIDFromParams(params *aggregate.SubscribeParams) string {
+func aggrIDFromParams(params *stream.SubscribeParams) string {
 	if params.AggrID != "" {
 		return params.AggrID
 	}
@@ -194,7 +203,7 @@ func aggrIDFromParams(params *aggregate.SubscribeParams) string {
 	return "*"
 }
 
-func (e *eventStream) Subscribe(ctx context.Context, handler func(msg *repo.StoredMsg) error, params *aggregate.SubscribeParams) (aggregate.Drainer, error) {
+func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *stream.StoredMsg) error, params *stream.SubscribeParams) (stream.Drainer, error) {
 
 	maxpend := maxAckPending
 	if params.QoS.Ordering == qos.Ordered {
@@ -216,7 +225,7 @@ func (e *eventStream) Subscribe(ctx context.Context, handler func(msg *repo.Stor
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
 
 				var target *aggregate.InvariantViolationError
-				if err := handler(eventFromMsg(natsMessageAdapter{msg})); err != nil {
+				if err := handler(streamMsgFromNatsMsg(natsMessageAdapter{msg})); err != nil {
 					if !errors.As(err, &target) {
 						slog.Warn("redelivering", "error", err)
 						msg.Nak()
@@ -262,7 +271,7 @@ func (e *eventStream) Subscribe(ctx context.Context, handler func(msg *repo.Stor
 		// }
 
 		var target *aggregate.InvariantViolationError
-		if err := handler(eventFromMsg(natsJSMsgAdapter{msg})); err != nil {
+		if err := handler(streamMsgFromNatsMsg(natsJSMsgAdapter{msg})); err != nil {
 			if !errors.As(err, &target) {
 				slog.Warn("redelivering", "error", err)
 				msg.Nak()

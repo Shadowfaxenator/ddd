@@ -1,11 +1,11 @@
-package aggregate
+package eventstore
 
 import (
 	"fmt"
 	"reflect"
 	"time"
 
-	"github.com/alekseev-bro/ddd/internal/serde"
+	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 )
 
@@ -14,11 +14,15 @@ type storeConfig struct {
 	SnapshotMaxInterval  time.Duration
 }
 
+// func (o StoreOption[T, PT]) ToStreamOption() stream.Option{
+
+// }
+
 type StoreOption[T any, PT PRoot[T]] func(a *store[T, PT])
 
 func WithEvent[E any, T any, PE interface {
 	*E
-	Evolver[T]
+	aggregate.Evolver[T]
 }, PT PRoot[T]](name string) StoreOption[T, PT] {
 
 	if reflect.TypeFor[E]().Kind() != reflect.Struct {
@@ -42,11 +46,12 @@ func WithSnapshot[T any, PT PRoot[T]](maxMsgs byte, maxInterval time.Duration) S
 		}
 	}
 }
-func WithEventCodec[T any, PT PRoot[T]](codec codec.Codec) StoreOption[T, PT] {
-	return func(a *store[T, PT]) {
-		a.eventSerder = serde.NewSerder[Evolver[T]](a.eventRegistry, codec)
-	}
-}
+
+// func WithEventCodec[T any, PT PRoot[T]](codec codec.Codec) StoreOption[T, PT] {
+// 	return func(a *store[T, PT]) {
+// 		a.eventSerder = serde.NewSerder[Evolver[T]](a.eventRegistry, codec)
+// 	}
+// }
 
 func WithSnapshotCodec[T any, PT PRoot[T]](codec codec.Codec) StoreOption[T, PT] {
 	return func(a *store[T, PT]) {

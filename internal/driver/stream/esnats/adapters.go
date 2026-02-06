@@ -1,16 +1,22 @@
 package esnats
 
 import (
+	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/alekseev-bro/ddd/pkg/repo"
+	"github.com/alekseev-bro/ddd/pkg/stream"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+type ComparableStringer interface {
+	fmt.Stringer
+	comparable
+}
 type natsMessage interface {
 	Headers() nats.Header
 	Data() []byte
@@ -102,19 +108,23 @@ func (n natsJSMsgAdapter) Seq() uint64 {
 	return mt.Sequence.Stream
 }
 
-func eventFromMsg(msg natsMessage) *repo.StoredMsg {
+func streamMsgFromNatsMsg(msg natsMessage) *stream.StoredMsg {
 
 	subjectParts := strings.Split(msg.Subject(), ".")
 	kind := subjectParts[2]
 
 	//	ev := typereg.GetType(kind, msg.Data())
 
-	return &repo.StoredMsg{
-		Msg: repo.Msg{
-			ID:   msg.Headers().Get(jetstream.MsgIDHeader),
-			Kind: kind,
-			Body: msg.Data(),
-		},
+	id, err := strconv.ParseInt(msg.Headers().Get(eventIDHeader), 10, 64)
+	if err != nil {
+		slog.Error("failed to parse event ID", "error", err)
+		panic("failed to parse event ID")
+	}
+
+	return &stream.StoredMsg{
+		ID:        id,
+		Kind:      kind,
+		Body:      msg.Data(),
 		Sequence:  msg.Seq(),
 		Timestamp: msg.Timestamp(),
 	}

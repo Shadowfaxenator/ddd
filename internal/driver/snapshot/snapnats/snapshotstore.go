@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
-	"github.com/alekseev-bro/ddd/pkg/aggregate"
-	"github.com/alekseev-bro/ddd/pkg/repo"
+	"github.com/alekseev-bro/ddd/pkg/eventstore"
+	"github.com/alekseev-bro/ddd/pkg/snapshot"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -23,7 +24,7 @@ const (
 	Memory
 )
 
-func NewSnapshotStore(ctx context.Context, js jetstream.JetStream, name string, cfg SnapshotStoreConfig) *snapshotStore {
+func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg SnapshotStoreConfig) *snapshotStore {
 
 	ss := &snapshotStore{
 		SnapshotStoreConfig: cfg,
@@ -45,23 +46,23 @@ func (s *snapshotStore) snapshotBucketName(name string) string {
 	return fmt.Sprintf("snapshot-%s", name)
 }
 
-func (s *snapshotStore) Save(ctx context.Context, key []byte, value []byte) error {
+func (s *snapshotStore) Save(ctx context.Context, key int64, value []byte) error {
 
-	_, err := s.kv.Put(ctx, string(key), value)
+	_, err := s.kv.Put(ctx, strconv.Itoa(int(key)), value)
 	return err
 }
 
-func (s *snapshotStore) Load(ctx context.Context, key []byte) (*repo.Snapshot, error) {
+func (s *snapshotStore) Load(ctx context.Context, key int64) (*snapshot.Snapshot, error) {
 
-	v, err := s.kv.Get(ctx, string(key))
+	v, err := s.kv.Get(ctx, strconv.Itoa(int(key)))
 	if err != nil {
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
-			return nil, aggregate.ErrNoSnapshot
+			return nil, eventstore.ErrNoSnapshot
 		}
 		return nil, err
 	}
 
-	snap := &repo.Snapshot{
+	snap := &snapshot.Snapshot{
 		Body:      v.Value(),
 		Timestamp: v.Created(),
 	}
