@@ -51,7 +51,7 @@ func (r *registry) Create(name string) (any, error) {
 	return ct(), nil
 }
 
-func (r *registry) NameFor(in any) (string, error) {
+func (r *registry) Kind(in any) (string, error) {
 	if in == nil {
 		return "", errors.New("registry: cannot get name for nil")
 	}
@@ -81,7 +81,7 @@ func WithDelimiter(delimiter string) typeNameFromOption {
 
 type TypeRegistry interface {
 	Register(tname string, c func() any)
-	NameFor(in any) (string, error)
+	Kind(in any) (string, error)
 	Create(name string) (any, error)
 }
 

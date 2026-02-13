@@ -9,6 +9,10 @@ import (
 type ID id.ID
 type EventID id.ID
 
+func (i ID) I64() int64 {
+	return int64(i)
+}
+
 func NewEventID() EventID {
 	return EventID(id.New())
 }
@@ -33,8 +37,8 @@ func (e InvariantViolationError) Error() string {
 }
 
 type Aggregate[T any] struct {
-	ID
+	ID        ID
 	Sequence  uint64
 	Timestamp time.Time
-	State     T
+	State     *T
 }

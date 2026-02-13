@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/alekseev-bro/ddd/pkg/eventstore"
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -52,17 +51,17 @@ func (s *snapshotStore) Save(ctx context.Context, key int64, value []byte) error
 	return err
 }
 
-func (s *snapshotStore) Load(ctx context.Context, key int64) (*snapshot.Snapshot, error) {
+func (s *snapshotStore) Load(ctx context.Context, key int64) (*snapshot.Value, error) {
 
 	v, err := s.kv.Get(ctx, strconv.Itoa(int(key)))
 	if err != nil {
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
-			return nil, eventstore.ErrNoSnapshot
+			return nil, snapshot.ErrNoSnapshot
 		}
 		return nil, err
 	}
 
-	snap := &snapshot.Snapshot{
+	snap := &snapshot.Value{
 		Body:      v.Value(),
 		Timestamp: v.Created(),
 	}

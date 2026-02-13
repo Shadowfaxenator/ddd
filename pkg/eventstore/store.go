@@ -14,9 +14,7 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/stream"
 
-	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
-	"github.com/nats-io/nats.go"
 )
 
 type messageCount uint
@@ -42,25 +40,31 @@ type PRoot[T any] interface {
 	*T
 }
 
+type snapshotStore[T any] interface {
+	Save(ctx context.Context, a *aggregate.Aggregate[T]) error
+	Load(ctx context.Context, id aggregate.ID) (*snapshot.Snapshot[T], bool)
+}
+
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any, PT PRoot[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...StoreOption[T, PT]) *store[T, PT] {
-
-	str := stream.New(ctx, typereg.TypeNameFor[T](), es)
-
-	aggr := &store[T, PT]{
-		storeConfig: storeConfig{
-			SnapthotMsgThreshold: byte(snapshotSize),
-			SnapshotMaxInterval:  snapshotInterval,
-		},
-		es:            str,
-		ss:            ss,
-		snapshotCodec: codec.JSON,
-		eventRegistry: str,
+func New[T any, PT PRoot[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...StoreOption[T, PT]) *Store[T, PT] {
+	opt := new(storeOptions[T, PT])
+	opt.storeConfig = storeConfig{
+		SnapthotMsgThreshold: byte(snapshotSize),
+		SnapshotMaxInterval:  snapshotInterval,
 	}
-
 	for _, o := range opts {
-		o(aggr)
+		o(opt)
 	}
+	str := stream.New(ctx, es, opt.streamOptions...)
+	snap := snapshot.NewStore[T](ss, opt.snapshotOptions...)
+
+	aggr := &Store[T, PT]{
+		storeConfig: opt.storeConfig,
+		es:          str,
+		ss:          snap,
+		eventTypes:  str,
+	}
+
 	//	var zero T
 
 	return aggr
@@ -71,9 +75,9 @@ func New[T any, PT PRoot[T]](ctx context.Context, es stream.Driver, ss snapshot.
 type Subscriber[T any] interface {
 	Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error)
 }
-type NameForSubscriber[T any] interface {
+type EventKindSubscriber[T any] interface {
 	Subscriber[T]
-	nameFor(in any) (string, error)
+	EventKind(in aggregate.Evolver[T]) (string, error)
 }
 
 type CommandHandler[T any, C any] interface {
@@ -88,15 +92,10 @@ type EventHandler[T any, E aggregate.Evolver[T]] interface {
 	HandleEvent(ctx context.Context, event E) error
 }
 
-type registerer interface {
-	Register(name string, f func() any)
-}
-
 type eventStream interface {
 	Load(ctx context.Context, id aggregate.ID, seq uint64) iter.Seq2[*stream.Event, error]
 	Save(ctx context.Context, aggrID aggregate.ID, expectedSequence uint64, events []any) ([]stream.MsgMetadata, error)
 	Subscribe(ctx context.Context, h stream.EventHandler, opts ...stream.ProjOption) (stream.Drainer, error)
-	registerer
 }
 
 // Mutator is an interface that defines the Update method for executing commands on an aggregate.
@@ -106,37 +105,29 @@ type Mutator[T any, PT PRoot[T]] interface {
 	Mutate(ctx context.Context, id aggregate.ID, modify func(state PT) (aggregate.Events[T], error)) ([]stream.MsgMetadata, error)
 }
 
-// All aggregates must implement the Store interface.
-type Store[T any, PT PRoot[T]] interface {
-	Subscriber[T]
-	Mutator[T, PT]
-	NameForSubscriber[T]
+type kinder interface {
+	Kind(in any) (string, error)
 }
 
-type store[T any, PT PRoot[T]] struct {
+type Store[T any, PT PRoot[T]] struct {
 	storeConfig
-	es            eventStream
-	ss            snapshot.Driver
-	qos           qos.QoS
-	pubsub        *nats.Conn
-	snapshotCodec codec.Codec
-	eventRegistry typereg.TypeRegistry
+	es         eventStream
+	ss         snapshotStore[T]
+	eventTypes kinder
+	codec      codec.Codec
 }
 
-func (a *store[T, PT]) nameFor(in any) (string, error) {
-	return a.eventRegistry.NameFor(in)
+func (a *Store[T, PT]) EventKind(in aggregate.Evolver[T]) (string, error) {
+	return a.eventTypes.Kind(in)
 }
-func (a *store[T, PT]) build(ctx context.Context, id aggregate.ID, sn *snapshot.Snapshot) (*aggregate.Aggregate[PT], error) {
-	aggr := &aggregate.Aggregate[PT]{
+
+func (a *Store[T, PT]) build(ctx context.Context, id aggregate.ID, sn *snapshot.Snapshot[T]) (*aggregate.Aggregate[T], error) {
+	aggr := &aggregate.Aggregate[T]{
 		State: PT(new(T)),
 	}
 
 	if sn != nil {
-		var body aggregate.Aggregate[PT]
-		if err := a.snapshotCodec.Unmarshal(sn.Body, &body); err != nil {
-			return nil, fmt.Errorf("build: %w", err)
-		}
-		aggr = &body
+		aggr = sn.Body
 	}
 
 	events := a.es.Load(ctx, id, aggr.Sequence)
@@ -163,7 +154,7 @@ func (a *store[T, PT]) build(ctx context.Context, id aggregate.ID, sn *snapshot.
 	return aggr, nil
 }
 
-func (a *store[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error) {
+func (a *Store[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error) {
 	var op []stream.ProjOption
 
 	op = append(op, stream.WithName(typereg.TypeNameFrom(h)))
@@ -172,22 +163,16 @@ func (a *store[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts .
 }
 
 // Update executes a command on the aggregate root.
-func (a *store[T, PT]) Mutate(
+func (a *Store[T, PT]) Mutate(
 	ctx context.Context, id aggregate.ID,
 	modify func(state PT) (aggregate.Events[T], error),
 
 ) ([]stream.MsgMetadata, error) {
 	var err error
 	var invError error
-	var aggr *aggregate.Aggregate[PT]
-	sn := new(snapshot.Snapshot)
-	sn, err = a.ss.Load(ctx, int64(id))
-	if err != nil {
-		if !errors.Is(err, ErrNoSnapshot) {
-			return nil, fmt.Errorf("update: %w", err)
-		}
-		sn = nil
-	}
+	var aggr *aggregate.Aggregate[T]
+
+	sn, hasSnapshot := a.ss.Load(ctx, id)
 
 	aggr, err = a.build(ctx, id, sn)
 	if err != nil {
@@ -221,11 +206,14 @@ func (a *store[T, PT]) Mutate(
 
 	// Save snapshot if aggregate has more than snapshotThreshold messages
 	//	if state != nil && state.needSnapshot(a.SnapthotMsgThreshold, a.SnapshotMaxInterval) {
-	if numevents%int(a.SnapthotMsgThreshold) == 0 && time.Since(sn.Timestamp) > a.SnapshotMaxInterval {
+	var snapTime time.Time
+	if hasSnapshot {
+		snapTime = sn.Timestamp
+	}
+	if numevents%int(a.SnapthotMsgThreshold) == 0 && time.Since(snapTime) > a.SnapshotMaxInterval {
 		go func() {
-			b, err := a.snapshotCodec.Marshal(aggr)
-			err = a.ss.Save(ctx, int64(id), b)
-			if err != nil {
+
+			if err := a.ss.Save(ctx, aggr); err != nil {
 				slog.Error("snapshot save", "error", err.Error())
 				return
 			}
@@ -259,7 +247,7 @@ func (s *subscribeHandlerAddapter[T]) HandleEvents(ctx context.Context, ev any) 
 
 }
 
-func Project[E aggregate.Evolver[T], T any](ctx context.Context, sub NameForSubscriber[T], h EventHandler[T, E]) (stream.Drainer, error) {
+func Project[E aggregate.Evolver[T], T any](ctx context.Context, sub EventKindSubscriber[T], h EventHandler[T, E]) (stream.Drainer, error) {
 
 	var zero any
 	t := reflect.TypeFor[E]()
@@ -270,12 +258,13 @@ func Project[E aggregate.Evolver[T], T any](ctx context.Context, sub NameForSubs
 		var z E
 		zero = z
 	default:
-		panic(fmt.Sprintf("unsupported event type: %s", t.Name()))
+		panic(fmt.Sprintf("unsupported event type: %s", t))
 	}
 
 	n := fmt.Sprintf("%s", typereg.TypeNameFrom(h))
 
-	eventKind, err := sub.nameFor(zero)
+	eventKind, err := sub.EventKind(zero.(E))
+
 	if err != nil {
 		return nil, fmt.Errorf("project: %w", err)
 	}

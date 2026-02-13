@@ -3,10 +3,10 @@ package natsstore
 import (
 	"time"
 
-	"github.com/alekseev-bro/ddd/internal/driver/snapshot/snapnats"
-	"github.com/alekseev-bro/ddd/internal/driver/stream/esnats"
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/codec"
+	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/snapnats"
+	"github.com/alekseev-bro/ddd/pkg/drivers/stream/esnats"
 	"github.com/alekseev-bro/ddd/pkg/eventstore"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -72,6 +72,6 @@ func WithSnapshot[T any, PT eventstore.PRoot[T]](maxMsgs byte, maxInterval time.
 
 func WithSnapshotCodec[T any, PT eventstore.PRoot[T]](codec codec.Codec) option[T, PT] {
 	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, eventstore.WithSnapshotCodec[T, PT](codec))
+		a.agOpts = append(a.agOpts, eventstore.WithCodec[T, PT](codec))
 	}
 }

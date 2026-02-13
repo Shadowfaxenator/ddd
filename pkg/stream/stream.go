@@ -40,12 +40,11 @@ type stream struct {
 	eventSerder eventSerder
 }
 
-func New(ctx context.Context, name string, sub Driver, opts ...Option) *stream {
+func New(ctx context.Context, sub Driver, opts ...Option) *stream {
 	reg := typereg.New()
 	ser := serde.NewSerder[any](reg, codec.JSON)
 	st := &stream{
 		store:        sub,
-		name:         name,
 		TypeRegistry: reg,
 		eventSerder:  ser,
 	}
@@ -56,7 +55,7 @@ func New(ctx context.Context, name string, sub Driver, opts ...Option) *stream {
 }
 
 type nameForer interface {
-	NameFor(in any) (string, error)
+	Kind(in any) (string, error)
 }
 
 type EventHandler interface {
@@ -97,7 +96,7 @@ func (s *stream) Save(ctx context.Context, aggrID aggregate.ID, expectedSequence
 		if err != nil {
 			return nil, fmt.Errorf("save %w", err)
 		}
-		kind, err := s.NameFor(ev)
+		kind, err := s.Kind(ev)
 		if err != nil {
 			return nil, fmt.Errorf("update: %w", err)
 		}
