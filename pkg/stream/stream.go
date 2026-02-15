@@ -168,7 +168,8 @@ func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOpti
 		// TODO: implement panic recovery
 		ev, err := a.eventSerder.Deserialize(msg.Kind, msg.Body)
 		if err != nil {
-			panic(err)
+			slog.Error("can't deserialize event", "kind", msg.Kind)
+			return nil
 		}
 		return h.HandleEvents(idempotency.ContextWithKey(ctx, msg.ID), ev)
 	}, params)

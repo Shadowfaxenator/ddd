@@ -31,7 +31,7 @@ func New() int64 {
 }
 
 func MustParseIDFromString(s string) ID {
-	id, err := strconv.Atoi(s)
+	id, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		panic(err)
 	}
@@ -42,5 +42,5 @@ type ID int64
 
 func (i ID) String() string {
 
-	return strconv.Itoa(int(i))
+	return strconv.FormatInt(int64(i), 10)
 }

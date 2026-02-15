@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"strconv"
 
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
@@ -34,7 +36,8 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg Sna
 		Storage: jetstream.StorageType(ss.StoreType),
 	})
 	if err != nil {
-		panic(err)
+		slog.Error("can't create key value", "error", err)
+		os.Exit(1)
 	}
 
 	ss.kv = kv

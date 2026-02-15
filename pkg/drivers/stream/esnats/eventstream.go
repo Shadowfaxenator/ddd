@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"time"
 
@@ -59,7 +60,8 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg Eve
 	})
 
 	if err != nil {
-		panic(err)
+		slog.Error("nats stream create", "error", err)
+		os.Exit(1)
 	}
 
 	return stream
@@ -131,11 +133,12 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 		}
 		return nil, fmt.Errorf("save: %w", err)
 	}
+
 	outmsgs := make([]stream.MsgMetadata, len(msgs))
 	for i, msg := range msgs {
 		outmsgs[i] = stream.MsgMetadata{
 			MsgID:    msg.ID,
-			Sequence: batchAck.Sequence,
+			Sequence: batchAck.Sequence + uint64(i),
 		}
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
 		slog.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
@@ -165,8 +168,11 @@ func (s *eventStreamDriver) Load(ctx context.Context, aggrID int64, fromSeq uint
 			}
 			return fmt.Errorf("build func can't get msg batch: %w", err)
 		}
-
-		if err := handler(streamMsgFromNatsMsg(jsRawMsgAdapter{msg})); err != nil {
+		sm, err := streamMsgFromNatsMsg(jsRawMsgAdapter{msg})
+		if err != nil {
+			return fmt.Errorf("load failed: %w", err)
+		}
+		if err := handler(sm); err != nil {
 			return err
 		}
 
@@ -225,7 +231,12 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
 
 				var target *aggregate.InvariantViolationError
-				if err := handler(streamMsgFromNatsMsg(natsMessageAdapter{msg})); err != nil {
+				sm, err := streamMsgFromNatsMsg(natsMessageAdapter{msg})
+				if err != nil {
+					slog.Error("load failed", "error", err)
+					return
+				}
+				if err := handler(sm); err != nil {
 					if !errors.As(err, &target) {
 						slog.Warn("redelivering", "error", err)
 						msg.Nak()
@@ -258,20 +269,18 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 	})
 	if err != nil {
 		slog.Error("subscription create consumer", "error", err)
-		panic(err)
+		os.Exit(1)
 	}
 
 	ct, err := cons.Consume(func(msg jetstream.Msg) {
-		// mt, err := msg.Metadata()
-		// if err != nil {
-		// 	slog.Error("subscription metadata", "error", err)
-		// 	slog.Warn("redelivering")
-		// 	msg.Nak()
-		// 	return
-		// }
 
 		var target *aggregate.InvariantViolationError
-		if err := handler(streamMsgFromNatsMsg(natsJSMsgAdapter{msg})); err != nil {
+		sm, err := streamMsgFromNatsMsg(natsJSMsgAdapter{msg})
+		if err != nil {
+			slog.Error("load failed", "error", err)
+			return
+		}
+		if err := handler(sm); err != nil {
 			if !errors.As(err, &target) {
 				slog.Warn("redelivering", "error", err)
 				msg.Nak()
@@ -287,7 +296,8 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 	}),
 	)
 	if err != nil {
-		panic(fmt.Errorf("subscription consume: %w", err))
+		slog.Error("subscription consume", "error", err)
+		os.Exit(1)
 	}
 
 	return drainList{&drainAdapter{ConsumeContext: ct}}, nil

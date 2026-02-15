@@ -13,7 +13,7 @@ type Option func(*stream)
 func WithEvent[E any](name string) Option {
 
 	if reflect.TypeFor[E]().Kind() != reflect.Struct {
-		panic(fmt.Sprintf("event '%s' must be a struct and not a pointer", reflect.TypeFor[E]().Elem().Name()))
+		panic(fmt.Sprintf("event '%s' must be a struct and not a pointer", name))
 	}
 	return func(a *stream) {
 

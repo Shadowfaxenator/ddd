@@ -34,7 +34,7 @@ func WithEvent[E any, T any, PE interface {
 }, PT PRoot[T]](name string) StoreOption[T, PT] {
 
 	if reflect.TypeFor[E]().Kind() != reflect.Struct {
-		panic(fmt.Sprintf("event '%s' must be a struct and not a pointer", reflect.TypeFor[E]().Elem().Name()))
+		panic(fmt.Sprintf("event '%s' must be a struct and not a pointer", name))
 	}
 	return func(a *storeOptions[T, PT]) {
 

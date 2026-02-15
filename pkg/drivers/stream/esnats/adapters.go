@@ -22,7 +22,7 @@ type natsMessage interface {
 	Data() []byte
 	Subject() string
 	Seq() uint64
-	Timestamp() time.Time
+	Timestamp() (time.Time, error)
 }
 
 type jsRawMsgAdapter struct {
@@ -32,8 +32,8 @@ type jsRawMsgAdapter struct {
 func (j jsRawMsgAdapter) Headers() nats.Header {
 	return j.RawStreamMsg.Header
 }
-func (j jsRawMsgAdapter) Timestamp() time.Time {
-	return j.RawStreamMsg.Time
+func (j jsRawMsgAdapter) Timestamp() (time.Time, error) {
+	return j.RawStreamMsg.Time, nil
 }
 
 func (j jsRawMsgAdapter) Data() []byte {
@@ -57,14 +57,12 @@ func (n natsMessageAdapter) Headers() nats.Header {
 	return n.Msg.Header
 }
 
-// TODO: check panic for NATS core
-func (n natsMessageAdapter) Timestamp() time.Time {
+func (n natsMessageAdapter) Timestamp() (time.Time, error) {
 	mt, err := n.Msg.Metadata()
 	if err != nil {
-		slog.Error("failed to get metadata", "error", err)
-		panic("failed to get metadata")
+		return time.Time{}, fmt.Errorf("timestamp: %w", err)
 	}
-	return mt.Timestamp
+	return mt.Timestamp, nil
 }
 
 func (n natsMessageAdapter) Data() []byte {
@@ -90,13 +88,12 @@ type natsJSMsgAdapter struct {
 	jetstream.Msg
 }
 
-func (n natsJSMsgAdapter) Timestamp() time.Time {
+func (n natsJSMsgAdapter) Timestamp() (time.Time, error) {
 	mt, err := n.Msg.Metadata()
 	if err != nil {
-		slog.Error("failed to get metadata", "error", err)
-		panic("failed to get metadata")
+		return time.Time{}, fmt.Errorf("timestamp: %w", err)
 	}
-	return mt.Timestamp
+	return mt.Timestamp, nil
 }
 
 func (n natsJSMsgAdapter) Seq() uint64 {
@@ -108,7 +105,7 @@ func (n natsJSMsgAdapter) Seq() uint64 {
 	return mt.Sequence.Stream
 }
 
-func streamMsgFromNatsMsg(msg natsMessage) *stream.StoredMsg {
+func streamMsgFromNatsMsg(msg natsMessage) (*stream.StoredMsg, error) {
 
 	subjectParts := strings.Split(msg.Subject(), ".")
 	kind := subjectParts[2]
@@ -117,8 +114,11 @@ func streamMsgFromNatsMsg(msg natsMessage) *stream.StoredMsg {
 
 	id, err := strconv.ParseInt(msg.Headers().Get(eventIDHeader), 10, 64)
 	if err != nil {
-		slog.Error("failed to parse event ID", "error", err)
-		panic("failed to parse event ID")
+		return nil, fmt.Errorf("failed to parse event ID: %w", err)
+	}
+	ts, err := msg.Timestamp()
+	if err != nil {
+		return nil, err
 	}
 
 	return &stream.StoredMsg{
@@ -126,6 +126,6 @@ func streamMsgFromNatsMsg(msg natsMessage) *stream.StoredMsg {
 		Kind:      kind,
 		Body:      msg.Data(),
 		Sequence:  msg.Seq(),
-		Timestamp: msg.Timestamp(),
-	}
+		Timestamp: ts,
+	}, nil
 }
