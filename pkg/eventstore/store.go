@@ -239,8 +239,8 @@ type subscribeHandlerAddapter[T any] struct {
 
 func (s *subscribeHandlerAddapter[T]) HandleEvents(ctx context.Context, ev any) error {
 	if e, ok := ev.(aggregate.Evolver[T]); ok {
-		s.h.HandleEvents(ctx, e)
-		return nil
+		return s.h.HandleEvents(ctx, e)
+
 	}
 
 	return fmt.Errorf("sub addapter event handler: %w", errors.New("event is not Evolver[T]"))
