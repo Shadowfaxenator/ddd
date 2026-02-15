@@ -17,6 +17,8 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/idempotency"
 )
 
+var ErrNonRetriable = errors.New("non-retriable error")
+
 type InfoErrorer interface {
 	Info(msg string, args ...any)
 	Error(msg string, args ...any)
@@ -172,11 +174,11 @@ func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOpti
 	}
 
 	d, err := a.store.Subscribe(ctx, func(msg *StoredMsg) error {
-		// TODO: implement panic recovery
+
 		ev, err := a.eventSerder.Deserialize(msg.Kind, msg.Body)
 		if err != nil {
 			a.logger.Error("can't deserialize event", "kind", msg.Kind)
-			return nil
+			return ErrNonRetriable
 		}
 		return h.HandleEvents(idempotency.ContextWithKey(ctx, msg.ID), ev)
 	}, params)

@@ -241,7 +241,7 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 					return
 				}
 				if err := handler(sm); err != nil {
-					if !errors.As(err, &target) {
+					if !errors.As(err, &target) && !errors.Is(err, stream.ErrNonRetriable) {
 						e.Logger.Warn("redelivering", "error", err)
 						msg.Nak()
 						return
@@ -284,7 +284,7 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 			return
 		}
 		if err := handler(sm); err != nil {
-			if !errors.As(err, &target) {
+			if !errors.As(err, &target) && !errors.Is(err, stream.ErrNonRetriable) {
 				e.Logger.Warn("redelivering", "error", err)
 				msg.Nak()
 				return
