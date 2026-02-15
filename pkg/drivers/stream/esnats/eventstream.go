@@ -254,7 +254,11 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 		subs := make(drainList, len(filter))
 		for i, f := range filter {
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
-				adapt := natsMessageAdapter{msg}
+				adapt, err := newNatsMessageAdapter(msg)
+				if err != nil {
+					e.Logger.Error("failed to create message adapter", "error", err)
+					return
+				}
 				e.processMessage(adapt, adapt, handler)
 			})
 			if err != nil {
@@ -281,7 +285,11 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 	}
 
 	ct, err := cons.Consume(func(msg jetstream.Msg) {
-		adapt := natsJSMsgAdapter{msg}
+		adapt, err := newNatsJSMsgAdapter(msg)
+		if err != nil {
+			e.Logger.Error("failed to create message adapter", "error", err)
+			return
+		}
 		e.processMessage(adapt, adapt, handler)
 
 	}, jetstream.ConsumeErrHandler(func(consumeCtx jetstream.ConsumeContext, err error) {

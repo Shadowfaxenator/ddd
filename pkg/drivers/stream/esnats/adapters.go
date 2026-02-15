@@ -2,7 +2,6 @@ package esnats
 
 import (
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +21,7 @@ type natsMessage interface {
 	Data() []byte
 	Subject() string
 	Seq() uint64
-	Timestamp() (time.Time, error)
+	Timestamp() time.Time
 }
 
 type ackNaker interface {
@@ -37,8 +36,8 @@ type jsRawMsgAdapter struct {
 func (j jsRawMsgAdapter) Headers() nats.Header {
 	return j.RawStreamMsg.Header
 }
-func (j jsRawMsgAdapter) Timestamp() (time.Time, error) {
-	return j.RawStreamMsg.Time, nil
+func (j jsRawMsgAdapter) Timestamp() time.Time {
+	return j.RawStreamMsg.Time
 }
 
 func (j jsRawMsgAdapter) Data() []byte {
@@ -54,76 +53,98 @@ func (j jsRawMsgAdapter) Seq() uint64 {
 	return j.RawStreamMsg.Sequence
 }
 
+func newNatsMessageAdapter(msg *nats.Msg) (natsMessageAdapter, error) {
+	mt, err := msg.Metadata()
+	if err != nil {
+		return natsMessageAdapter{}, fmt.Errorf("metadata: %w", err)
+	}
+	return natsMessageAdapter{
+		msg: msg,
+		mt:  mt,
+	}, nil
+}
+
 type natsMessageAdapter struct {
-	*nats.Msg
+	msg *nats.Msg
+	mt  *nats.MsgMetadata
 }
 
 func (n natsMessageAdapter) Ack() error {
-	return n.Msg.Ack()
+	return n.msg.Ack()
 }
 
 func (n natsMessageAdapter) Nak() error {
-	return n.Msg.Nak()
+	return n.msg.Nak()
 }
 
 func (n natsMessageAdapter) Headers() nats.Header {
-	return n.Msg.Header
+	return n.msg.Header
 }
 
-func (n natsMessageAdapter) Timestamp() (time.Time, error) {
-	mt, err := n.Msg.Metadata()
-	if err != nil {
-		return time.Time{}, fmt.Errorf("timestamp: %w", err)
-	}
-	return mt.Timestamp, nil
+func (n natsMessageAdapter) Timestamp() time.Time {
+	return n.mt.Timestamp
 }
 
 func (n natsMessageAdapter) Data() []byte {
-	return n.Msg.Data
+	return n.msg.Data
 }
 
 func (n natsMessageAdapter) Subject() string {
 
-	return n.Msg.Subject
+	return n.msg.Subject
 }
 
-// TODO: check panic for NATS core
 func (n natsMessageAdapter) Seq() uint64 {
-	mt, err := n.Msg.Metadata()
+
+	return n.mt.Sequence.Stream
+}
+
+func newNatsJSMsgAdapter(msg jetstream.Msg) (natsJSMsgAdapter, error) {
+	mt, err := msg.Metadata()
 	if err != nil {
-		slog.Error("failed to get metadata", "error", err)
-		panic("failed to get metadata")
+		return natsJSMsgAdapter{}, fmt.Errorf("metadata: %w", err)
 	}
-	return mt.Sequence.Stream
+
+	return natsJSMsgAdapter{
+		msg: msg,
+		mt:  mt,
+	}, nil
 }
 
 type natsJSMsgAdapter struct {
-	jetstream.Msg
+	msg jetstream.Msg
+	mt  *jetstream.MsgMetadata
 }
 
 func (n natsJSMsgAdapter) Ack() error {
-	return n.Msg.Ack()
+	return n.msg.Ack()
 }
 
 func (n natsJSMsgAdapter) Nak() error {
-	return n.Msg.Nak()
+	return n.msg.Nak()
 }
 
-func (n natsJSMsgAdapter) Timestamp() (time.Time, error) {
-	mt, err := n.Msg.Metadata()
-	if err != nil {
-		return time.Time{}, fmt.Errorf("timestamp: %w", err)
-	}
-	return mt.Timestamp, nil
+func (n natsJSMsgAdapter) Timestamp() time.Time {
+
+	return n.mt.Timestamp
 }
 
 func (n natsJSMsgAdapter) Seq() uint64 {
-	mt, err := n.Msg.Metadata()
-	if err != nil {
-		slog.Error("failed to get metadata", "error", err)
-		panic("failed to get metadata")
-	}
-	return mt.Sequence.Stream
+
+	return n.mt.Sequence.Stream
+}
+
+func (n natsJSMsgAdapter) Data() []byte {
+	return n.msg.Data()
+}
+
+func (n natsJSMsgAdapter) Subject() string {
+
+	return n.msg.Subject()
+}
+
+func (n natsJSMsgAdapter) Headers() nats.Header {
+	return n.msg.Headers()
 }
 
 func streamMsgFromNatsMsg(msg natsMessage) (*stream.StoredMsg, error) {
@@ -137,16 +158,12 @@ func streamMsgFromNatsMsg(msg natsMessage) (*stream.StoredMsg, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse event ID: %w", err)
 	}
-	ts, err := msg.Timestamp()
-	if err != nil {
-		return nil, err
-	}
 
 	return &stream.StoredMsg{
 		ID:        id,
 		Kind:      kind,
 		Body:      msg.Data(),
 		Sequence:  msg.Seq(),
-		Timestamp: ts,
+		Timestamp: msg.Timestamp(),
 	}, nil
 }
