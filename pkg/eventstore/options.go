@@ -50,11 +50,9 @@ func WithEvent[E any, T any, PE interface {
 
 func WithSnapshot[T any, PT PtrAggr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) StoreOption[T, PT] {
 	return func(a *storeOptions[T, PT]) {
-		a.storeConfig = storeConfig{
-			SnapshotMsgThreshold: maxMsgs,
-			SnapshotMaxInterval:  maxInterval,
-			SnapshotTimeout:      timeout,
-		}
+		a.storeConfig.SnapshotMaxInterval = maxInterval
+		a.storeConfig.SnapshotMsgThreshold = maxMsgs
+		a.storeConfig.SnapshotTimeout = timeout
 	}
 }
 
