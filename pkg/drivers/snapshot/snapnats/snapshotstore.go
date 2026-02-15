@@ -40,7 +40,7 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, options
 		Storage: jetstream.StorageType(ss.StoreType),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("can't create key value", err)
+		return nil, fmt.Errorf("can not create key value: %w", err)
 	}
 
 	ss.kv = kv
