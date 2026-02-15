@@ -14,6 +14,7 @@ import (
 type storeConfig struct {
 	SnapthotMsgThreshold byte
 	SnapshotMaxInterval  time.Duration
+	SnapshotTimeout      time.Duration
 }
 
 // func (o StoreOption[T, PT]) ToStreamOption() stream.Option{
@@ -41,11 +42,12 @@ func WithEvent[E any, T any, PE interface {
 	}
 }
 
-func WithSnapshot[T any, PT PRoot[T]](maxMsgs byte, maxInterval time.Duration) StoreOption[T, PT] {
+func WithSnapshot[T any, PT PRoot[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) StoreOption[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.storeConfig = storeConfig{
 			SnapthotMsgThreshold: maxMsgs,
 			SnapshotMaxInterval:  maxInterval,
+			SnapshotTimeout:      timeout,
 		}
 	}
 }
