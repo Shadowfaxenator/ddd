@@ -3,6 +3,8 @@ package natsstore
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"reflect"
 
 	"github.com/alekseev-bro/ddd/internal/typereg"
@@ -28,8 +30,17 @@ func New[T any, PT eventstore.PRoot[T]](ctx context.Context, js jetstream.JetStr
 		opt(cfg)
 	}
 	strName := fmt.Sprintf("%s", typereg.TypeNameFor[T](typereg.WithDelimiter(":")))
-	es := esnats.NewDriver(ctx, js, strName, cfg.esCfg)
-	ss := snapnats.NewDriver(ctx, js, typereg.TypeNameFor[T](typereg.WithDelimiter("-")), cfg.ssCfg)
+	es, err := esnats.NewDriver(ctx, js, strName, cfg.esCfg)
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+
+	}
+	ss, err := snapnats.NewDriver(ctx, js, typereg.TypeNameFor[T](typereg.WithDelimiter("-")), cfg.ssCfg)
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+	}
 
 	return eventstore.New(ctx, es, ss, cfg.agOpts...)
 }

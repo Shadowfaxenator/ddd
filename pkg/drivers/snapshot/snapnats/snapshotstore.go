@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"os"
 	"strconv"
 
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
@@ -25,7 +23,7 @@ const (
 	Memory
 )
 
-func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg SnapshotStoreConfig) *snapshotStore {
+func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg SnapshotStoreConfig) (*snapshotStore, error) {
 
 	ss := &snapshotStore{
 		SnapshotStoreConfig: cfg,
@@ -36,12 +34,11 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg Sna
 		Storage: jetstream.StorageType(ss.StoreType),
 	})
 	if err != nil {
-		slog.Error("can't create key value", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("can't create key value", err)
 	}
 
 	ss.kv = kv
-	return ss
+	return ss, nil
 }
 
 func (s *snapshotStore) snapshotBucketName(name string) string {

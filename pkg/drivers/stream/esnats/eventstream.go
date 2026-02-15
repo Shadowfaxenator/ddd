@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strconv"
 	"time"
 
@@ -44,7 +43,7 @@ const (
 	defaultDeduplication time.Duration = time.Minute * 2
 )
 
-func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg EventStreamConfig) *eventStreamDriver {
+func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg EventStreamConfig) (*eventStreamDriver, error) {
 	if cfg.Deduplication == 0 {
 		cfg.Deduplication = defaultDeduplication
 	}
@@ -60,11 +59,10 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg Eve
 	})
 
 	if err != nil {
-		slog.Error("nats stream create", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("nats stream create: %w", err)
 	}
 
-	return stream
+	return stream, nil
 }
 
 func (s *eventStreamDriver) subjectNameForID(agrid string) string {
@@ -268,8 +266,7 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 		//PinnedTTL:      time.Second * 10,
 	})
 	if err != nil {
-		slog.Error("subscription create consumer", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("subscription create consumer: %w", err)
 	}
 
 	ct, err := cons.Consume(func(msg jetstream.Msg) {
@@ -296,8 +293,7 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 	}),
 	)
 	if err != nil {
-		slog.Error("subscription consume", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("subscription consume: %w", err)
 	}
 
 	return drainList{&drainAdapter{ConsumeContext: ct}}, nil
