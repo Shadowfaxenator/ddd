@@ -3,8 +3,6 @@ package natsstore
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 	"reflect"
 
 	"github.com/alekseev-bro/ddd/internal/typereg"
@@ -21,7 +19,7 @@ type Store[T any, PT eventstore.PRoot[T]] struct {
 	js jetstream.JetStream
 }
 
-func New[T any, PT eventstore.PRoot[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) *eventstore.Store[T, PT] {
+func New[T any, PT eventstore.PRoot[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) (*eventstore.Store[T, PT], error) {
 	if reflect.TypeFor[T]().Kind() != reflect.Struct {
 		panic("type T is not a struct")
 	}
@@ -32,17 +30,14 @@ func New[T any, PT eventstore.PRoot[T]](ctx context.Context, js jetstream.JetStr
 	strName := fmt.Sprintf("%s", typereg.TypeNameFor[T](typereg.WithDelimiter(":")))
 	es, err := esnats.NewDriver(ctx, js, strName, cfg.esCfg)
 	if err != nil {
-		slog.Error(err.Error())
-		os.Exit(1)
-
+		return nil, fmt.Errorf("stream driver: %w", err)
 	}
 	ss, err := snapnats.NewDriver(ctx, js, typereg.TypeNameFor[T](typereg.WithDelimiter("-")), cfg.ssCfg)
 	if err != nil {
-		slog.Error(err.Error())
-		os.Exit(1)
+		return nil, fmt.Errorf("snapshot driver: %w", err)
 	}
 
-	return eventstore.New(ctx, es, ss, cfg.agOpts...)
+	return eventstore.New(ctx, es, ss, cfg.agOpts...), nil
 }
 
 type saver interface {
