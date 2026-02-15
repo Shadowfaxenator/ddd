@@ -6,9 +6,9 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/id"
 )
 
-var Key idempotanceKey = "idempKey"
+var Key idempotenceKey = "idempKey"
 
-type idempotanceKey string
+type idempotenceKey string
 
 func KeyFromCtxOrRandom(ctx context.Context) int64 {
 	if val, ok := ctx.Value(Key).(int64); ok {

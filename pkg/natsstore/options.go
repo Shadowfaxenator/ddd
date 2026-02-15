@@ -20,22 +20,22 @@ const (
 	Memory
 )
 
-type options[T any, PT eventstore.PRoot[T]] struct {
+type options[T any, PT eventstore.PtrAggr[T]] struct {
 	esCfg  []esnats.Option
 	ssCfg  []snapnats.Option
 	agOpts []eventstore.StoreOption[T, PT]
 }
 
-type option[T any, PT eventstore.PRoot[T]] func(c *options[T, PT])
+type option[T any, PT eventstore.PtrAggr[T]] func(c *options[T, PT])
 
-func WithInMemory[T any, PT eventstore.PRoot[T]]() option[T, PT] {
+func WithInMemory[T any, PT eventstore.PtrAggr[T]]() option[T, PT] {
 	return func(opts *options[T, PT]) {
 		opts.esCfg = append(opts.esCfg, esnats.WithStoreType(esnats.Memory))
 		opts.ssCfg = append(opts.ssCfg, snapnats.WithStoreType(snapnats.Memory))
 	}
 }
 
-func WithDeduplication[T any, PT eventstore.PRoot[T]](duration time.Duration) option[T, PT] {
+func WithDeduplication[T any, PT eventstore.PtrAggr[T]](duration time.Duration) option[T, PT] {
 	return func(opts *options[T, PT]) {
 		opts.esCfg = append(opts.esCfg, esnats.WithDeduplication(duration))
 	}
@@ -44,25 +44,25 @@ func WithDeduplication[T any, PT eventstore.PRoot[T]](duration time.Duration) op
 func WithEvent[E any, T any, PE interface {
 	*E
 	aggregate.Evolver[T]
-}, PT eventstore.PRoot[T]](name string) option[T, PT] {
+}, PT eventstore.PtrAggr[T]](name string) option[T, PT] {
 	return func(o *options[T, PT]) {
 		o.agOpts = append(o.agOpts, eventstore.WithEvent[E, T, PE, PT](name))
 	}
 }
 
-func WithSnapshot[T any, PT eventstore.PRoot[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) option[T, PT] {
+func WithSnapshot[T any, PT eventstore.PtrAggr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, eventstore.WithSnapshot[T, PT](maxMsgs, maxInterval, timeout))
 	}
 }
 
-func WithSnapshotCodec[T any, PT eventstore.PRoot[T]](codec codec.Codec) option[T, PT] {
+func WithSnapshotCodec[T any, PT eventstore.PtrAggr[T]](codec codec.Codec) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, eventstore.WithCodec[T, PT](codec))
 	}
 }
 
-func WithLogger[T any, PT eventstore.PRoot[T]](logger *slog.Logger) option[T, PT] {
+func WithLogger[T any, PT eventstore.PtrAggr[T]](logger *slog.Logger) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, eventstore.WithLogger[T, PT](logger))
 	}

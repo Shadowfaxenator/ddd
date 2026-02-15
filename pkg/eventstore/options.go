@@ -13,7 +13,7 @@ import (
 )
 
 type storeConfig struct {
-	SnapthotMsgThreshold byte
+	SnapshotMsgThreshold byte
 	SnapshotMaxInterval  time.Duration
 	SnapshotTimeout      time.Duration
 	Logger               *slog.Logger
@@ -22,18 +22,18 @@ type storeConfig struct {
 // func (o StoreOption[T, PT]) ToStreamOption() stream.Option{
 
 // }
-type storeOptions[T any, PT PRoot[T]] struct {
+type storeOptions[T any, PT PtrAggr[T]] struct {
 	streamOptions   []stream.Option
 	snapshotOptions []snapshot.Option[T]
 	storeConfig
 }
 
-type StoreOption[T any, PT PRoot[T]] func(a *storeOptions[T, PT])
+type StoreOption[T any, PT PtrAggr[T]] func(a *storeOptions[T, PT])
 
 func WithEvent[E any, T any, PE interface {
 	*E
 	aggregate.Evolver[T]
-}, PT PRoot[T]](name string) StoreOption[T, PT] {
+}, PT PtrAggr[T]](name string) StoreOption[T, PT] {
 
 	if reflect.TypeFor[E]().Kind() != reflect.Struct {
 		panic(fmt.Sprintf("event '%s' must be a struct and not a pointer", name))
@@ -44,24 +44,24 @@ func WithEvent[E any, T any, PE interface {
 	}
 }
 
-func WithSnapshot[T any, PT PRoot[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) StoreOption[T, PT] {
+func WithSnapshot[T any, PT PtrAggr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) StoreOption[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.storeConfig = storeConfig{
-			SnapthotMsgThreshold: maxMsgs,
+			SnapshotMsgThreshold: maxMsgs,
 			SnapshotMaxInterval:  maxInterval,
 			SnapshotTimeout:      timeout,
 		}
 	}
 }
 
-func WithCodec[T any, PT PRoot[T]](codec codec.Codec) StoreOption[T, PT] {
+func WithCodec[T any, PT PtrAggr[T]](codec codec.Codec) StoreOption[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.snapshotOptions = append(a.snapshotOptions, snapshot.WithCodec[T](codec))
 		a.streamOptions = append(a.streamOptions, stream.WithCodec(codec))
 	}
 }
 
-func WithLogger[T any, PT PRoot[T]](logger *slog.Logger) StoreOption[T, PT] {
+func WithLogger[T any, PT PtrAggr[T]](logger *slog.Logger) StoreOption[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.storeConfig.Logger = logger
 	}

@@ -22,7 +22,7 @@ type messageCount uint
 const (
 	snapshotSize      messageCount  = 100
 	snapshotInterval  time.Duration = time.Second * 1
-	idempotancyWindow time.Duration = time.Minute * 2
+	idempotencyWindow time.Duration = time.Minute * 2
 	snapshotTimeout   time.Duration = time.Second * 5
 )
 
@@ -37,7 +37,7 @@ type EventSerder[T any] interface {
 }
 
 // Aggregate store type it implements the Aggregate interface.
-type PRoot[T any] interface {
+type PtrAggr[T any] interface {
 	*T
 }
 
@@ -47,10 +47,10 @@ type snapshotStore[T any] interface {
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any, PT PRoot[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...StoreOption[T, PT]) *Store[T, PT] {
+func New[T any, PT PtrAggr[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...StoreOption[T, PT]) *Store[T, PT] {
 	opt := new(storeOptions[T, PT])
 	opt.storeConfig = storeConfig{
-		SnapthotMsgThreshold: byte(snapshotSize),
+		SnapshotMsgThreshold: byte(snapshotSize),
 		SnapshotMaxInterval:  snapshotInterval,
 		SnapshotTimeout:      snapshotTimeout,
 		Logger:               slog.Default(),
@@ -104,7 +104,7 @@ type eventStream interface {
 // Mutator is an interface that defines the Update method for executing commands on an aggregate.
 // Each command is executed in a transactional manner, ensuring that the aggregate state is consistent.
 // Commands must implement the Executer interface.
-type Mutator[T any, PT PRoot[T]] interface {
+type Mutator[T any, PT PtrAggr[T]] interface {
 	Mutate(ctx context.Context, id aggregate.ID, modify func(state PT) (aggregate.Events[T], error)) ([]stream.MsgMetadata, error)
 }
 
@@ -112,7 +112,7 @@ type kinder interface {
 	Kind(in any) (string, error)
 }
 
-type Store[T any, PT PRoot[T]] struct {
+type Store[T any, PT PtrAggr[T]] struct {
 	storeConfig
 	es         eventStream
 	ss         snapshotStore[T]
@@ -163,7 +163,7 @@ func (a *Store[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts .
 
 	op = append(op, stream.WithName(typereg.TypeNameFrom(h)))
 	op = append(op, opts...)
-	return a.es.Subscribe(ctx, &subscribeHandlerAddapter[T]{h: h}, op...)
+	return a.es.Subscribe(ctx, &subscribeHandlerAdapter[T]{h: h}, op...)
 }
 
 // Update executes a command on the aggregate root.
@@ -221,7 +221,7 @@ func (a *Store[T, PT]) Mutate(
 		}
 		aggr.Version += uint64(numevents)
 		notSnaphottedEventsNumber = aggr.Version - numEventsBeforeBuild
-		if notSnaphottedEventsNumber >= uint64(a.SnapthotMsgThreshold) && time.Since(snapTime) > a.SnapshotMaxInterval {
+		if notSnaphottedEventsNumber >= uint64(a.SnapshotMsgThreshold) && time.Since(snapTime) > a.SnapshotMaxInterval {
 			evts.Evolve(aggr.State)
 			if len(storedMsgs) > 0 {
 				aggr.Sequence = storedMsgs[len(storedMsgs)-1].Sequence
@@ -253,11 +253,11 @@ func (h *handleEventAdapter[E, T]) HandleEvents(ctx context.Context, event aggre
 	return h.h.HandleEvent(ctx, event.(E))
 }
 
-type subscribeHandlerAddapter[T any] struct {
+type subscribeHandlerAdapter[T any] struct {
 	h EventsHandler[T]
 }
 
-func (s *subscribeHandlerAddapter[T]) HandleEvents(ctx context.Context, ev any) error {
+func (s *subscribeHandlerAdapter[T]) HandleEvents(ctx context.Context, ev any) error {
 	if e, ok := ev.(aggregate.Evolver[T]); ok {
 		return s.h.HandleEvents(ctx, e)
 

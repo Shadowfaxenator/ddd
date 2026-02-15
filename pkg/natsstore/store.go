@@ -15,11 +15,11 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-type Store[T any, PT eventstore.PRoot[T]] struct {
+type Store[T any, PT eventstore.PtrAggr[T]] struct {
 	js jetstream.JetStream
 }
 
-func New[T any, PT eventstore.PRoot[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) (*eventstore.Store[T, PT], error) {
+func New[T any, PT eventstore.PtrAggr[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) (*eventstore.Store[T, PT], error) {
 	if reflect.TypeFor[T]().Kind() != reflect.Struct {
 		panic("type T is not a struct")
 	}

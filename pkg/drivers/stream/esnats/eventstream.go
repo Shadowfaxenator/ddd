@@ -83,7 +83,7 @@ func (s *eventStreamDriver) allSubjects() string {
 	return fmt.Sprintf("%s.>", s.name)
 }
 
-func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotancyKey int64) ([]stream.MsgMetadata, error) {
+func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotencyKey int64) ([]stream.MsgMetadata, error) {
 	strAggrID := strconv.FormatInt(aggrID, 10)
 	if msgs == nil {
 		return nil, nil
@@ -94,8 +94,8 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
 		nmsg := nats.NewMsg(sub)
 
-		if idempotancyKey != 0 && i == 0 {
-			nmsg.Header.Add(jetstream.MsgIDHeader, strconv.FormatInt(idempotancyKey, 10))
+		if idempotencyKey != 0 && i == 0 {
+			nmsg.Header.Add(jetstream.MsgIDHeader, strconv.FormatInt(idempotencyKey, 10))
 		}
 		nmsg.Data = msg.Body
 		nmsg.Header.Add(eventIDHeader, strconv.FormatInt(msg.ID, 10))
