@@ -1,7 +1,6 @@
 package serde
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -46,7 +45,7 @@ func (s *serder[T]) Deserialize(t string, b []byte) (T, error) {
 	if err != nil {
 		return zero, fmt.Errorf("deserialize: %w", err)
 	}
-	if err := json.Unmarshal(b, out); err != nil {
+	if err := s.codec.Unmarshal(b, out); err != nil {
 		return zero, fmt.Errorf("deserialize: %w", err)
 	}
 	return out.(T), nil
