@@ -25,6 +25,11 @@ type natsMessage interface {
 	Timestamp() (time.Time, error)
 }
 
+type ackNaker interface {
+	Nak() error
+	Ack() error
+}
+
 type jsRawMsgAdapter struct {
 	*jetstream.RawStreamMsg
 }
@@ -51,6 +56,14 @@ func (j jsRawMsgAdapter) Seq() uint64 {
 
 type natsMessageAdapter struct {
 	*nats.Msg
+}
+
+func (n natsMessageAdapter) Ack() error {
+	return n.Msg.Ack()
+}
+
+func (n natsMessageAdapter) Nak() error {
+	return n.Msg.Nak()
 }
 
 func (n natsMessageAdapter) Headers() nats.Header {
@@ -86,6 +99,14 @@ func (n natsMessageAdapter) Seq() uint64 {
 
 type natsJSMsgAdapter struct {
 	jetstream.Msg
+}
+
+func (n natsJSMsgAdapter) Ack() error {
+	return n.Msg.Ack()
+}
+
+func (n natsJSMsgAdapter) Nak() error {
+	return n.Msg.Nak()
 }
 
 func (n natsJSMsgAdapter) Timestamp() (time.Time, error) {

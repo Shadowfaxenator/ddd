@@ -213,6 +213,27 @@ func aggrIDFromParams(params *stream.SubscribeParams) string {
 	return "*"
 }
 
+func (e *eventStreamDriver) processMessage(m natsMessage, a ackNaker, handler func(msg *stream.StoredMsg) error) {
+	var target *aggregate.InvariantViolationError
+	sm, err := streamMsgFromNatsMsg(m)
+	if err != nil {
+		e.Logger.Error("load failed", "error", err)
+		return
+	}
+	if err := handler(sm); err != nil {
+		if !errors.As(err, &target) && !errors.Is(err, stream.ErrNonRetriable) {
+			e.Logger.Warn("redelivering...", "error", err)
+			a.Nak()
+			return
+		} else {
+			if target != nil {
+				e.Logger.Warn("invariant violation", "reason", target.Err.Error())
+			}
+		}
+	}
+	a.Ack()
+}
+
 func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *stream.StoredMsg) error, params *stream.SubscribeParams) (stream.Drainer, error) {
 
 	maxpend := maxAckPending
@@ -233,24 +254,8 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 		subs := make(drainList, len(filter))
 		for i, f := range filter {
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
-
-				var target *aggregate.InvariantViolationError
-				sm, err := streamMsgFromNatsMsg(natsMessageAdapter{msg})
-				if err != nil {
-					e.Logger.Error("load failed", "error", err)
-					return
-				}
-				if err := handler(sm); err != nil {
-					if !errors.As(err, &target) && !errors.Is(err, stream.ErrNonRetriable) {
-						e.Logger.Warn("redelivering", "error", err)
-						msg.Nak()
-						return
-					} else {
-						e.Logger.Warn("invariant violation", "reason", err.Error())
-					}
-				}
-				msg.Ack()
-
+				adapt := natsMessageAdapter{msg}
+				e.processMessage(adapt, adapt, handler)
 			})
 			if err != nil {
 				return nil, fmt.Errorf("at most once subscribe: %w", err)
@@ -276,23 +281,8 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 	}
 
 	ct, err := cons.Consume(func(msg jetstream.Msg) {
-
-		var target *aggregate.InvariantViolationError
-		sm, err := streamMsgFromNatsMsg(natsJSMsgAdapter{msg})
-		if err != nil {
-			e.Logger.Error("load failed", "error", err)
-			return
-		}
-		if err := handler(sm); err != nil {
-			if !errors.As(err, &target) && !errors.Is(err, stream.ErrNonRetriable) {
-				e.Logger.Warn("redelivering", "error", err)
-				msg.Nak()
-				return
-			} else {
-				e.Logger.Warn("invariant violation", "reason", err.Error())
-			}
-		}
-		msg.Ack()
+		adapt := natsJSMsgAdapter{msg}
+		e.processMessage(adapt, adapt, handler)
 
 	}, jetstream.ConsumeErrHandler(func(consumeCtx jetstream.ConsumeContext, err error) {
 		e.Logger.Error("subscription consume", "error", err)
