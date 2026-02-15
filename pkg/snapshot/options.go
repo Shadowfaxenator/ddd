@@ -1,8 +1,6 @@
 package snapshot
 
 import (
-	"log/slog"
-
 	"github.com/alekseev-bro/ddd/pkg/codec"
 )
 
@@ -14,7 +12,7 @@ func WithCodec[T any](codec codec.Codec) Option[T] {
 	}
 }
 
-func WithLogger[T any](logger *slog.Logger) Option[T] {
+func WithLogger[T any](logger Errorer) Option[T] {
 	return func(s *store[T]) {
 		s.logger = logger
 	}

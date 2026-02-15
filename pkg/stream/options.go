@@ -2,7 +2,6 @@ package stream
 
 import (
 	"fmt"
-	"log/slog"
 	"reflect"
 
 	"github.com/alekseev-bro/ddd/internal/serde"
@@ -32,7 +31,7 @@ func WithCodec(c codec.Codec) Option {
 	}
 }
 
-func WithLogger(logger *slog.Logger) Option {
+func WithLogger(logger InfoErrorer) Option {
 	return func(a *stream) {
 		a.logger = logger
 	}

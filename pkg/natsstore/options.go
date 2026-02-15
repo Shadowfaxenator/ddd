@@ -1,7 +1,6 @@
 package natsstore
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
@@ -12,6 +11,12 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 )
+
+type InfoWarnErrorer interface {
+	Info(msg string, args ...any)
+	Warn(msg string, args ...any)
+	Error(msg string, args ...any)
+}
 
 type StoreType jetstream.StorageType
 
@@ -62,8 +67,9 @@ func WithSnapshotCodec[T any, PT eventstore.PtrAggr[T]](codec codec.Codec) optio
 	}
 }
 
-func WithLogger[T any, PT eventstore.PtrAggr[T]](logger *slog.Logger) option[T, PT] {
+func WithLogger[T any, PT eventstore.PtrAggr[T]](logger InfoWarnErrorer) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, eventstore.WithLogger[T, PT](logger))
+		a.esCfg = append(a.esCfg, esnats.WithLogger(logger))
 	}
 }

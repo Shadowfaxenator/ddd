@@ -1,15 +1,20 @@
 package esnats
 
 import (
-	"log/slog"
 	"time"
 )
+
+type InfoWarnErrorer interface {
+	Info(msg string, args ...any)
+	Warn(msg string, args ...any)
+	Error(msg string, args ...any)
+}
 
 type eventStreamConfig struct {
 	StoreType     StoreType
 	PartitionNum  byte
 	Deduplication time.Duration
-	Logger        *slog.Logger
+	Logger        InfoWarnErrorer
 }
 
 type Option func(*eventStreamConfig)
@@ -28,7 +33,7 @@ func WithStoreType(storeType StoreType) Option {
 	}
 }
 
-func WithLogger(logger *slog.Logger) Option {
+func WithLogger(logger InfoWarnErrorer) Option {
 	return func(es *eventStreamConfig) {
 		es.Logger = logger
 

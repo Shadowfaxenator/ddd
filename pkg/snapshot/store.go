@@ -11,6 +11,10 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/codec"
 )
 
+type Errorer interface {
+	Error(msg string, args ...any)
+}
+
 type Value struct {
 	Body      []byte
 	Timestamp time.Time
@@ -24,7 +28,7 @@ type Snapshot[T any] struct {
 type store[T any] struct {
 	codec  codec.Codec
 	ss     Driver
-	logger *slog.Logger
+	logger Errorer
 }
 
 func NewStore[T any](ss Driver, opts ...Option[T]) *store[T] {

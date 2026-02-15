@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strconv"
 
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
@@ -27,7 +26,6 @@ const (
 func NewDriver(ctx context.Context, js jetstream.JetStream, name string, options ...Option) (*snapshotStore, error) {
 	cfg := &snapshotStoreConfig{
 		StoreType: Disk,
-		Logger:    slog.Default(),
 	}
 	for _, option := range options {
 		option(cfg)

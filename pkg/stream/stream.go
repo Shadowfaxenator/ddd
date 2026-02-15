@@ -17,6 +17,11 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/idempotency"
 )
 
+type InfoErrorer interface {
+	Info(msg string, args ...any)
+	Error(msg string, args ...any)
+}
+
 type Publisher interface {
 	Publish(ctx context.Context, subject string, data []byte) error
 }
@@ -38,7 +43,7 @@ type stream struct {
 	store Driver
 	typereg.TypeRegistry
 	eventSerder eventSerder
-	logger      *slog.Logger
+	logger      InfoErrorer
 }
 
 func New(ctx context.Context, sub Driver, opts ...Option) *stream {

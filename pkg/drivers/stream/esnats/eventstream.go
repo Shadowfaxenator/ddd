@@ -36,8 +36,7 @@ type eventStreamDriver struct {
 	name string
 	*eventStreamConfig
 	// TODO: impl partitioning
-	js     jetstream.JetStream
-	logger *slog.Logger
+	js jetstream.JetStream
 }
 
 const (
@@ -110,17 +109,17 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 		if err != nil {
 			var seqerr *jetstream.APIError
 			if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
-				s.logger.Warn("occ", "version", expectedSequence, "name", s.subjectNameForID(strAggrID))
+				s.Logger.Warn("occ", "version", expectedSequence, "name", s.subjectNameForID(strAggrID))
 			}
 			return nil, fmt.Errorf("store event func: %w", err)
 		}
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msgs[0].Kind)
 		if ack.Duplicate {
-			s.logger.Warn("duplicate event not stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
+			s.Logger.Warn("duplicate event not stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
 			return nil, nil
 		}
 
-		s.logger.Info("event stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
+		s.Logger.Info("event stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
 		msgs := []stream.MsgMetadata{
 			{
 				MsgID:    msgs[0].ID,
@@ -134,7 +133,7 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 	if err != nil {
 		var seqerr *jetstream.APIError
 		if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
-			s.logger.Warn("occ", "name", s.subjectNameForID(strAggrID))
+			s.Logger.Warn("occ", "name", s.subjectNameForID(strAggrID))
 		}
 		return nil, fmt.Errorf("save: %w", err)
 	}
@@ -146,7 +145,7 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 			Sequence: batchAck.Sequence + uint64(i),
 		}
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
-		s.logger.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
+		s.Logger.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
 	}
 
 	return outmsgs, nil
@@ -238,16 +237,16 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 				var target *aggregate.InvariantViolationError
 				sm, err := streamMsgFromNatsMsg(natsMessageAdapter{msg})
 				if err != nil {
-					e.logger.Error("load failed", "error", err)
+					e.Logger.Error("load failed", "error", err)
 					return
 				}
 				if err := handler(sm); err != nil {
 					if !errors.As(err, &target) {
-						e.logger.Warn("redelivering", "error", err)
+						e.Logger.Warn("redelivering", "error", err)
 						msg.Nak()
 						return
 					} else {
-						e.logger.Warn("invariant violation", "reason", err.Error())
+						e.Logger.Warn("invariant violation", "reason", err.Error())
 					}
 				}
 				msg.Ack()
@@ -281,22 +280,22 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 		var target *aggregate.InvariantViolationError
 		sm, err := streamMsgFromNatsMsg(natsJSMsgAdapter{msg})
 		if err != nil {
-			e.logger.Error("load failed", "error", err)
+			e.Logger.Error("load failed", "error", err)
 			return
 		}
 		if err := handler(sm); err != nil {
 			if !errors.As(err, &target) {
-				e.logger.Warn("redelivering", "error", err)
+				e.Logger.Warn("redelivering", "error", err)
 				msg.Nak()
 				return
 			} else {
-				e.logger.Warn("invariant violation", "reason", err.Error())
+				e.Logger.Warn("invariant violation", "reason", err.Error())
 			}
 		}
 		msg.Ack()
 
 	}, jetstream.ConsumeErrHandler(func(consumeCtx jetstream.ConsumeContext, err error) {
-		e.logger.Error("subscription consume", "error", err)
+		e.Logger.Error("subscription consume", "error", err)
 	}),
 	)
 	if err != nil {

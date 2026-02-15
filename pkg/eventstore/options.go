@@ -2,7 +2,6 @@ package eventstore
 
 import (
 	"fmt"
-	"log/slog"
 	"reflect"
 	"time"
 
@@ -12,11 +11,16 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/stream"
 )
 
+type InfoErrorer interface {
+	Info(msg string, args ...any)
+	Error(msg string, args ...any)
+}
+
 type storeConfig struct {
 	SnapshotMsgThreshold byte
 	SnapshotMaxInterval  time.Duration
 	SnapshotTimeout      time.Duration
-	Logger               *slog.Logger
+	Logger               InfoErrorer
 }
 
 // func (o StoreOption[T, PT]) ToStreamOption() stream.Option{
@@ -61,7 +65,7 @@ func WithCodec[T any, PT PtrAggr[T]](codec codec.Codec) StoreOption[T, PT] {
 	}
 }
 
-func WithLogger[T any, PT PtrAggr[T]](logger *slog.Logger) StoreOption[T, PT] {
+func WithLogger[T any, PT PtrAggr[T]](logger InfoErrorer) StoreOption[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.storeConfig.Logger = logger
 	}
