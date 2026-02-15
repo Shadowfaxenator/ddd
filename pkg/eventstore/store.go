@@ -53,6 +53,7 @@ func New[T any, PT PRoot[T]](ctx context.Context, es stream.Driver, ss snapshot.
 		SnapthotMsgThreshold: byte(snapshotSize),
 		SnapshotMaxInterval:  snapshotInterval,
 		SnapshotTimeout:      snapshotTimeout,
+		Logger:               slog.Default(),
 	}
 	for _, o := range opts {
 		o(opt)
@@ -230,11 +231,11 @@ func (a *Store[T, PT]) Mutate(
 				ctxSnap, cancel := context.WithTimeout(context.Background(), a.SnapshotTimeout)
 				defer cancel()
 				if err := a.ss.Save(ctxSnap, aggr); err != nil {
-					slog.Error("snapshot save", "error", err.Error())
+					a.Logger.Error("snapshot save", "error", err.Error())
 					return
 				}
 
-				slog.Info("snapshot saved", "sequence", aggr.Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", aggr.Timestamp)
+				a.Logger.Info("snapshot saved", "sequence", aggr.Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", aggr.Timestamp)
 
 			}()
 

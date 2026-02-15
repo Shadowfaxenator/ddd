@@ -22,14 +22,16 @@ type Snapshot[T any] struct {
 }
 
 type store[T any] struct {
-	codec codec.Codec
-	ss    Driver
+	codec  codec.Codec
+	ss     Driver
+	logger *slog.Logger
 }
 
 func NewStore[T any](ss Driver, opts ...Option[T]) *store[T] {
 	s := &store[T]{
-		codec: codec.JSON,
-		ss:    ss,
+		codec:  codec.JSON,
+		ss:     ss,
+		logger: slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -52,7 +54,7 @@ func (s *store[T]) Load(ctx context.Context, id aggregate.ID) (*Snapshot[T], boo
 		if errors.Is(err, ErrNoSnapshot) {
 			return nil, false
 		}
-		slog.Error("snapshot load", "error", err)
+		s.logger.Error("snapshot load", "error", err)
 		return nil, false
 	}
 	snapshot := &Snapshot[T]{
@@ -61,7 +63,7 @@ func (s *store[T]) Load(ctx context.Context, id aggregate.ID) (*Snapshot[T], boo
 	}
 
 	if err := s.codec.Unmarshal(snap.Body, snapshot.Body); err != nil {
-		slog.Error("snapshot load", "error", err)
+		s.logger.Error("snapshot load", "error", err)
 		return nil, false
 	}
 

@@ -2,7 +2,6 @@ package serde
 
 import (
 	"fmt"
-	"log/slog"
 	"reflect"
 
 	"github.com/alekseev-bro/ddd/pkg/codec"
@@ -20,7 +19,6 @@ type Creator interface {
 func NewSerder[T any](reg Creator, c codec.Codec) *serder[T] {
 	t := reflect.TypeFor[T]()
 	if t.Kind() != reflect.Interface {
-		slog.Error("type T is not an interface")
 		panic("type T is not an interface")
 	}
 

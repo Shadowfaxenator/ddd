@@ -2,6 +2,7 @@ package eventstore
 
 import (
 	"fmt"
+	"log/slog"
 	"reflect"
 	"time"
 
@@ -15,6 +16,7 @@ type storeConfig struct {
 	SnapthotMsgThreshold byte
 	SnapshotMaxInterval  time.Duration
 	SnapshotTimeout      time.Duration
+	Logger               *slog.Logger
 }
 
 // func (o StoreOption[T, PT]) ToStreamOption() stream.Option{
@@ -56,5 +58,11 @@ func WithCodec[T any, PT PRoot[T]](codec codec.Codec) StoreOption[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.snapshotOptions = append(a.snapshotOptions, snapshot.WithCodec[T](codec))
 		a.streamOptions = append(a.streamOptions, stream.WithCodec(codec))
+	}
+}
+
+func WithLogger[T any, PT PRoot[T]](logger *slog.Logger) StoreOption[T, PT] {
+	return func(a *storeOptions[T, PT]) {
+		a.storeConfig.Logger = logger
 	}
 }

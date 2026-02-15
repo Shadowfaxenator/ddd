@@ -2,6 +2,7 @@ package stream
 
 import (
 	"fmt"
+	"log/slog"
 	"reflect"
 
 	"github.com/alekseev-bro/ddd/internal/serde"
@@ -28,5 +29,11 @@ func WithEvent[E any](name string) Option {
 func WithCodec(c codec.Codec) Option {
 	return func(a *stream) {
 		a.eventSerder = serde.NewSerder[any](a.TypeRegistry, c)
+	}
+}
+
+func WithLogger(logger *slog.Logger) Option {
+	return func(a *stream) {
+		a.logger = logger
 	}
 }

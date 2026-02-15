@@ -1,14 +1,22 @@
 package snapnats
 
-type SnapshotStoreConfig struct {
+import "log/slog"
+
+type snapshotStoreConfig struct {
 	StoreType StoreType
+	Logger    *slog.Logger
 }
 
-// type Option func(*SnapshotStoreConfig)
+type Option func(*snapshotStoreConfig)
 
-// func WithInMemory() Option {
-// 	return func(ss *SnapshotStoreConfig) {
-// 		ss.StoreType = Memory
+func WithStoreType(storeType StoreType) Option {
+	return func(ss *snapshotStoreConfig) {
+		ss.StoreType = storeType
+	}
+}
 
-// 	}
-// }
+func WithLogger(logger *slog.Logger) Option {
+	return func(ss *snapshotStoreConfig) {
+		ss.Logger = logger
+	}
+}

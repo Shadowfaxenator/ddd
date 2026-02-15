@@ -38,6 +38,7 @@ type stream struct {
 	store Driver
 	typereg.TypeRegistry
 	eventSerder eventSerder
+	logger      *slog.Logger
 }
 
 func New(ctx context.Context, sub Driver, opts ...Option) *stream {
@@ -47,6 +48,7 @@ func New(ctx context.Context, sub Driver, opts ...Option) *stream {
 		store:        sub,
 		TypeRegistry: reg,
 		eventSerder:  ser,
+		logger:       slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(st)
@@ -168,13 +170,13 @@ func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOpti
 		// TODO: implement panic recovery
 		ev, err := a.eventSerder.Deserialize(msg.Kind, msg.Body)
 		if err != nil {
-			slog.Error("can't deserialize event", "kind", msg.Kind)
+			a.logger.Error("can't deserialize event", "kind", msg.Kind)
 			return nil
 		}
 		return h.HandleEvents(idempotency.ContextWithKey(ctx, msg.ID), ev)
 	}, params)
 	if err == nil {
-		slog.Info("subscription created", "subscription", params.DurableName)
+		a.logger.Info("subscription created", "subscription", params.DurableName)
 	}
 	return d, nil
 }

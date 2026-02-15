@@ -1,6 +1,7 @@
 package natsstore
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
@@ -20,8 +21,8 @@ const (
 )
 
 type options[T any, PT eventstore.PRoot[T]] struct {
-	esCfg  esnats.EventStreamConfig
-	ssCfg  snapnats.SnapshotStoreConfig
+	esCfg  []esnats.Option
+	ssCfg  []snapnats.Option
 	agOpts []eventstore.StoreOption[T, PT]
 }
 
@@ -29,14 +30,14 @@ type option[T any, PT eventstore.PRoot[T]] func(c *options[T, PT])
 
 func WithInMemory[T any, PT eventstore.PRoot[T]]() option[T, PT] {
 	return func(opts *options[T, PT]) {
-		opts.esCfg.StoreType = esnats.Memory
-		opts.ssCfg.StoreType = snapnats.Memory
+		opts.esCfg = append(opts.esCfg, esnats.WithStoreType(esnats.Memory))
+		opts.ssCfg = append(opts.ssCfg, snapnats.WithStoreType(snapnats.Memory))
 	}
 }
 
 func WithDeduplication[T any, PT eventstore.PRoot[T]](duration time.Duration) option[T, PT] {
 	return func(opts *options[T, PT]) {
-		opts.esCfg.Deduplication = duration
+		opts.esCfg = append(opts.esCfg, esnats.WithDeduplication(duration))
 	}
 }
 
@@ -55,14 +56,14 @@ func WithSnapshot[T any, PT eventstore.PRoot[T]](maxMsgs byte, maxInterval time.
 	}
 }
 
-// func WithEventCodec[T any, PT aggregate.PRoot[T]](codec codec.Codec) option[T, PT] {
-// 	return func(a *options[T, PT]) {
-// 		a.agOpts = append(a.agOpts, aggregate.WithEventCodec[T, PT](codec))
-// 	}
-// }
-
 func WithSnapshotCodec[T any, PT eventstore.PRoot[T]](codec codec.Codec) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, eventstore.WithCodec[T, PT](codec))
+	}
+}
+
+func WithLogger[T any, PT eventstore.PRoot[T]](logger *slog.Logger) option[T, PT] {
+	return func(a *options[T, PT]) {
+		a.agOpts = append(a.agOpts, eventstore.WithLogger[T, PT](logger))
 	}
 }

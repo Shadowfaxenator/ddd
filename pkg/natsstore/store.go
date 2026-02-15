@@ -28,11 +28,11 @@ func New[T any, PT eventstore.PRoot[T]](ctx context.Context, js jetstream.JetStr
 		opt(cfg)
 	}
 	strName := fmt.Sprintf("%s", typereg.TypeNameFor[T](typereg.WithDelimiter(":")))
-	es, err := esnats.NewDriver(ctx, js, strName, cfg.esCfg)
+	es, err := esnats.NewDriver(ctx, js, strName, cfg.esCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("stream driver: %w", err)
 	}
-	ss, err := snapnats.NewDriver(ctx, js, typereg.TypeNameFor[T](typereg.WithDelimiter("-")), cfg.ssCfg)
+	ss, err := snapnats.NewDriver(ctx, js, typereg.TypeNameFor[T](typereg.WithDelimiter("-")), cfg.ssCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot driver: %w", err)
 	}
