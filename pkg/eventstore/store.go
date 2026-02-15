@@ -23,6 +23,7 @@ const (
 	snapshotSize      messageCount  = 100
 	snapshotInterval  time.Duration = time.Second * 1
 	idempotancyWindow time.Duration = time.Minute * 2
+	snapshotTimeout   time.Duration = time.Second * 5
 )
 
 type ComparableStringer interface {
@@ -51,6 +52,7 @@ func New[T any, PT PRoot[T]](ctx context.Context, es stream.Driver, ss snapshot.
 	opt.storeConfig = storeConfig{
 		SnapthotMsgThreshold: byte(snapshotSize),
 		SnapshotMaxInterval:  snapshotInterval,
+		SnapshotTimeout:      snapshotTimeout,
 	}
 	for _, o := range opts {
 		o(opt)
@@ -145,6 +147,7 @@ func (a *Store[T, PT]) build(ctx context.Context, id aggregate.ID, sn *snapshot.
 		if ev, ok := event.Body.(aggregate.Evolver[T]); ok {
 			ev.Evolve(aggr.State)
 			aggr.Sequence = event.Sequence
+			aggr.Version++
 		} else {
 			return nil, fmt.Errorf("buid, event is not Evolver[T] %w", err)
 		}
@@ -168,12 +171,17 @@ func (a *Store[T, PT]) Mutate(
 	modify func(state PT) (aggregate.Events[T], error),
 
 ) ([]stream.MsgMetadata, error) {
-	var err error
-	var invError error
-	var aggr *aggregate.Aggregate[T]
-
+	var (
+		err                       error
+		invError                  error
+		aggr                      *aggregate.Aggregate[T]
+		notSnaphottedEventsNumber uint64
+		numEventsBeforeBuild      uint64
+	)
 	sn, hasSnapshot := a.ss.Load(ctx, id)
-
+	if hasSnapshot {
+		numEventsBeforeBuild = sn.Body.Version
+	}
 	aggr, err = a.build(ctx, id, sn)
 	if err != nil {
 		return nil, fmt.Errorf("update: %w", err)
@@ -205,21 +213,32 @@ func (a *Store[T, PT]) Mutate(
 	}
 
 	// Save snapshot if aggregate has more than snapshotThreshold messages
-	//	if state != nil && state.needSnapshot(a.SnapthotMsgThreshold, a.SnapshotMaxInterval) {
-	var snapTime time.Time
-	if hasSnapshot {
-		snapTime = sn.Timestamp
-	}
-	if numevents%int(a.SnapthotMsgThreshold) == 0 && time.Since(snapTime) > a.SnapshotMaxInterval {
-		go func() {
-
-			if err := a.ss.Save(ctx, aggr); err != nil {
-				slog.Error("snapshot save", "error", err.Error())
-				return
+	if aggr != nil {
+		var snapTime time.Time
+		if hasSnapshot {
+			snapTime = sn.Timestamp
+		}
+		aggr.Version += uint64(numevents)
+		notSnaphottedEventsNumber = aggr.Version - numEventsBeforeBuild
+		if notSnaphottedEventsNumber >= uint64(a.SnapthotMsgThreshold) && time.Since(snapTime) > a.SnapshotMaxInterval {
+			evts.Evolve(aggr.State)
+			if len(storedMsgs) > 0 {
+				aggr.Sequence = storedMsgs[len(storedMsgs)-1].Sequence
 			}
-			slog.Info("snapshot saved", "sequence", aggr.Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", aggr.Timestamp)
 
-		}()
+			go func() {
+				ctxSnap, cancel := context.WithTimeout(context.Background(), a.SnapshotTimeout)
+				defer cancel()
+				if err := a.ss.Save(ctxSnap, aggr); err != nil {
+					slog.Error("snapshot save", "error", err.Error())
+					return
+				}
+
+				slog.Info("snapshot saved", "sequence", aggr.Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", aggr.Timestamp)
+
+			}()
+
+		}
 	}
 
 	return storedMsgs, invError

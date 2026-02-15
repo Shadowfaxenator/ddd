@@ -40,5 +40,6 @@ type Aggregate[T any] struct {
 	ID        ID
 	Sequence  uint64
 	Timestamp time.Time
+	Version   uint64
 	State     *T
 }
