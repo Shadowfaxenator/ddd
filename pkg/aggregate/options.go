@@ -32,12 +32,12 @@ type storeOptions[T any, PT StatePtr[T]] struct {
 	storeConfig
 }
 
-type StoreOption[T any, PT StatePtr[T]] func(a *storeOptions[T, PT])
+type Option[T any, PT StatePtr[T]] func(a *storeOptions[T, PT])
 
 func WithEvent[E any, T any, PE interface {
 	*E
 	Evolver[T]
-}, PT StatePtr[T]](name string) StoreOption[T, PT] {
+}, PT StatePtr[T]](name string) Option[T, PT] {
 
 	if reflect.TypeFor[E]().Kind() != reflect.Struct {
 		panic(fmt.Sprintf("event '%s' must be a struct and not a pointer", name))
@@ -48,7 +48,7 @@ func WithEvent[E any, T any, PE interface {
 	}
 }
 
-func WithSnapshot[T any, PT StatePtr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) StoreOption[T, PT] {
+func WithSnapshot[T any, PT StatePtr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) Option[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.storeConfig.SnapshotMaxInterval = maxInterval
 		a.storeConfig.SnapshotMsgThreshold = maxMsgs
@@ -56,14 +56,14 @@ func WithSnapshot[T any, PT StatePtr[T]](maxMsgs byte, maxInterval time.Duration
 	}
 }
 
-func WithCodec[T any, PT StatePtr[T]](codec codec.Codec) StoreOption[T, PT] {
+func WithCodec[T any, PT StatePtr[T]](codec codec.Codec) Option[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.snapshotOptions = append(a.snapshotOptions, snapshot.WithCodec[T](codec))
 		a.streamOptions = append(a.streamOptions, stream.WithCodec(codec))
 	}
 }
 
-func WithLogger[T any, PT StatePtr[T]](logger logger) StoreOption[T, PT] {
+func WithLogger[T any, PT StatePtr[T]](logger logger) Option[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.storeConfig.Logger = logger
 	}

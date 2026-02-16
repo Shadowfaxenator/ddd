@@ -26,11 +26,6 @@ const (
 	snapshotTimeout   time.Duration = time.Second * 5
 )
 
-type EventSerder[T any] interface {
-	Serialize(Evolver[T]) ([]byte, error)
-	Deserialize(string, []byte) (Evolver[T], error)
-}
-
 // Aggregate store type it implements the Aggregate interface.
 type StatePtr[T any] interface {
 	*T
@@ -42,7 +37,7 @@ type snapshotStore[T any] interface {
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...StoreOption[T, PT]) *Aggregate[T, PT] {
+func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...Option[T, PT]) *Aggregate[T, PT] {
 	opt := new(storeOptions[T, PT])
 	opt.storeConfig = storeConfig{
 		SnapshotMsgThreshold: byte(snapshotSize),
@@ -73,7 +68,7 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Driver, ss snapsh
 type Subscriber[T any] interface {
 	Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error)
 }
-type EventKindSubscriber[T any] interface {
+type eventKindSubscriber[T any] interface {
 	Subscriber[T]
 	EventKind(in Evolver[T]) (string, error)
 }
@@ -135,7 +130,7 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 	events := a.es.Load(ctx, identity.ID(id), aggr.Sequence)
 	for event, err := range events {
 		if err != nil {
-			if errors.Is(err, ErrNoAggregate) {
+			if errors.Is(err, ErrNotExists) {
 				if sn == nil {
 					return nil, nil
 				}
@@ -266,7 +261,7 @@ func (s *subscribeHandlerAdapter[T]) HandleEvents(ctx context.Context, ev any) e
 
 }
 
-func ProjectEvent[E Evolver[T], T any](ctx context.Context, sub EventKindSubscriber[T], h EventHandler[T, E]) (stream.Drainer, error) {
+func ProjectEvent[E Evolver[T], T any](ctx context.Context, sub eventKindSubscriber[T], h EventHandler[T, E]) (stream.Drainer, error) {
 
 	var zero any
 	t := reflect.TypeFor[E]()

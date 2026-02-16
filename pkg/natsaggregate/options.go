@@ -28,7 +28,7 @@ const (
 type options[T any, PT aggregate.StatePtr[T]] struct {
 	esCfg  []esnats.Option
 	ssCfg  []snapnats.Option
-	agOpts []aggregate.StoreOption[T, PT]
+	agOpts []aggregate.Option[T, PT]
 }
 
 type option[T any, PT aggregate.StatePtr[T]] func(c *options[T, PT])

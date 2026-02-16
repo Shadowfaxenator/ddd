@@ -168,7 +168,7 @@ func (s *eventStreamDriver) Load(ctx context.Context, aggrID int64, fromSeq uint
 		if err != nil {
 			if errors.Is(err, jetstreamext.ErrNoMessages) {
 
-				return aggregate.ErrNoAggregate
+				return aggregate.ErrNotExists
 			}
 			return fmt.Errorf("build func can't get msg batch: %w", err)
 		}
