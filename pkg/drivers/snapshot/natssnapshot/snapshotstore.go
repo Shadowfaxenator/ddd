@@ -1,4 +1,4 @@
-package snapnats
+package natssnapshot
 
 import (
 	"context"

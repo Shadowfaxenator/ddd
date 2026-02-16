@@ -5,8 +5,8 @@ import (
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/codec"
-	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/snapnats"
-	"github.com/alekseev-bro/ddd/pkg/drivers/stream/esnats"
+	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/natssnapshot"
+	"github.com/alekseev-bro/ddd/pkg/drivers/stream/natsstream"
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -26,8 +26,8 @@ const (
 )
 
 type options[T any, PT aggregate.StatePtr[T]] struct {
-	esCfg  []esnats.Option
-	ssCfg  []snapnats.Option
+	esCfg  []natsstream.Option
+	ssCfg  []natssnapshot.Option
 	agOpts []aggregate.Option[T, PT]
 }
 
@@ -35,8 +35,8 @@ type option[T any, PT aggregate.StatePtr[T]] func(c *options[T, PT])
 
 func WithInMemory[T any, PT aggregate.StatePtr[T]]() option[T, PT] {
 	return func(opts *options[T, PT]) {
-		opts.esCfg = append(opts.esCfg, esnats.WithStoreType(esnats.Memory))
-		opts.ssCfg = append(opts.ssCfg, snapnats.WithStoreType(snapnats.Memory))
+		opts.esCfg = append(opts.esCfg, natsstream.WithStoreType(natsstream.Memory))
+		opts.ssCfg = append(opts.ssCfg, natssnapshot.WithStoreType(natssnapshot.Memory))
 	}
 }
 
@@ -48,7 +48,7 @@ func WithSnapshotMaxTasks[T any, PT aggregate.StatePtr[T]](maxTasks byte) option
 
 func WithDeduplication[T any, PT aggregate.StatePtr[T]](duration time.Duration) option[T, PT] {
 	return func(opts *options[T, PT]) {
-		opts.esCfg = append(opts.esCfg, esnats.WithDeduplication(duration))
+		opts.esCfg = append(opts.esCfg, natsstream.WithDeduplication(duration))
 	}
 }
 
@@ -95,6 +95,6 @@ func WithCodec[T any, PT aggregate.StatePtr[T]](codec codec.Codec) option[T, PT]
 func WithLogger[T any, PT aggregate.StatePtr[T]](logger logger) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, aggregate.WithLogger[T, PT](logger))
-		a.esCfg = append(a.esCfg, esnats.WithLogger(logger))
+		a.esCfg = append(a.esCfg, natsstream.WithLogger(logger))
 	}
 }

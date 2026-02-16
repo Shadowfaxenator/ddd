@@ -1,4 +1,4 @@
-package esnats
+package natsstream
 
 import (
 	"time"

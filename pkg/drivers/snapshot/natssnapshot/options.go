@@ -1,4 +1,4 @@
-package snapnats
+package natssnapshot
 
 type snapshotStoreConfig struct {
 	StoreType StoreType

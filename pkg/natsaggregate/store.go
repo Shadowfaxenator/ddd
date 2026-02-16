@@ -6,8 +6,8 @@ import (
 
 	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
-	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/snapnats"
-	"github.com/alekseev-bro/ddd/pkg/drivers/stream/esnats"
+	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/natssnapshot"
+	"github.com/alekseev-bro/ddd/pkg/drivers/stream/natsstream"
 	"github.com/alekseev-bro/ddd/pkg/stream"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -19,11 +19,11 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 		opt(cfg)
 	}
 	strName := fmt.Sprintf("%s", typeregistry.TypeNameFor[T](typeregistry.WithDelimiter(":")))
-	es, err := esnats.NewStore(ctx, js, strName, cfg.esCfg...)
+	es, err := natsstream.NewStore(ctx, js, strName, cfg.esCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("stream driver: %w", err)
 	}
-	ss, err := snapnats.NewStore(ctx, js, typeregistry.TypeNameFor[T](typeregistry.WithDelimiter("-")), cfg.ssCfg...)
+	ss, err := natssnapshot.NewStore(ctx, js, typeregistry.TypeNameFor[T](typeregistry.WithDelimiter("-")), cfg.ssCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot driver: %w", err)
 	}
