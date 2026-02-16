@@ -20,10 +20,9 @@ import (
 type messageCount uint
 
 const (
-	snapshotSize      messageCount  = 100
-	snapshotInterval  time.Duration = time.Second * 1
-	idempotencyWindow time.Duration = time.Minute * 2
-	snapshotTimeout   time.Duration = time.Second * 5
+	snapshotSize     messageCount  = 100
+	snapshotInterval time.Duration = time.Second * 1
+	snapshotTimeout  time.Duration = time.Second * 5
 )
 
 // Aggregate store type it implements the Aggregate interface.
