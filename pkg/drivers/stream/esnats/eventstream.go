@@ -81,7 +81,7 @@ func (s *eventStreamDriver) allSubjects() string {
 	return fmt.Sprintf("%s.>", s.name)
 }
 
-func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotencyKey int64) ([]stream.MsgMetadata, error) {
+func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotencyKey int64) ([]stream.EventMetadata, error) {
 	strAggrID := strconv.FormatInt(aggrID, 10)
 	if msgs == nil {
 		return nil, nil
@@ -119,7 +119,7 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 		}
 
 		s.Logger.Info("event stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
-		msgs := []stream.MsgMetadata{
+		msgs := []stream.EventMetadata{
 			{
 				MsgID:    msgs[0].ID,
 				Sequence: ack.Sequence,
@@ -137,9 +137,9 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 		return nil, fmt.Errorf("save: %w", err)
 	}
 	msglen := len(msgs)
-	outmsgs := make([]stream.MsgMetadata, msglen)
+	outmsgs := make([]stream.EventMetadata, msglen)
 	for i, msg := range msgs {
-		outmsgs[i] = stream.MsgMetadata{
+		outmsgs[i] = stream.EventMetadata{
 			MsgID:    msg.ID,
 			Sequence: batchAck.Sequence + uint64(msglen) - uint64(i) - 1,
 		}

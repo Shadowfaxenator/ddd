@@ -1,4 +1,4 @@
-package typereg
+package typeregistry
 
 import (
 	"crypto/sha1"
@@ -79,10 +79,18 @@ func WithDelimiter(delimiter string) typeNameFromOption {
 	return typeNameFromOption(delimiter)
 }
 
-type TypeRegistry interface {
-	Register(tname string, c func() any)
+type Kinder interface {
 	Kind(in any) (string, error)
+}
+
+type Creator interface {
 	Create(name string) (any, error)
+}
+
+type CreateKinderRegistry interface {
+	Register(tname string, c func() any)
+	Creator
+	Kinder
 }
 
 func TypeNameFrom(e any, opts ...typeNameFromOption) string {
@@ -106,10 +114,7 @@ func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	case reflect.Pointer:
 		return fmt.Sprintf("%s%s%s", t.Elem().Name(), delim, bctx)
 	default:
-
 		panic("unsupported type")
-
-		//	json.Marshal()
 	}
 
 }

@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/alekseev-bro/ddd/internal/typereg"
+	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/identity"
 	"github.com/alekseev-bro/ddd/pkg/stream"
@@ -37,7 +37,7 @@ type snapshotStore[T any] interface {
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...Option[T, PT]) *Aggregate[T, PT] {
+func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapshot.Store, opts ...Option[T, PT]) *Aggregate[T, PT] {
 	opt := new(storeOptions[T, PT])
 	opt.storeConfig = storeConfig{
 		SnapshotMsgThreshold: byte(snapshotSize),
@@ -74,7 +74,7 @@ type eventKindSubscriber[T any] interface {
 }
 
 type CommandHandler[T any, C any] interface {
-	HandleCommand(ctx context.Context, cmd C) ([]stream.MsgMetadata, error)
+	HandleCommand(ctx context.Context, cmd C) ([]stream.EventMetadata, error)
 }
 
 type EventsHandler[T any] interface {
@@ -86,8 +86,8 @@ type EventHandler[T any, E Evolver[T]] interface {
 }
 
 type eventStream interface {
-	Load(ctx context.Context, id identity.ID, seq uint64) iter.Seq2[*stream.Event, error]
-	Save(ctx context.Context, id identity.ID, expectedSequence uint64, events []any) ([]stream.MsgMetadata, error)
+	LoadEvents(ctx context.Context, id identity.ID, seq uint64) iter.Seq2[*stream.Event, error]
+	SaveEvents(ctx context.Context, id identity.ID, expectedSequence uint64, events []any) ([]stream.EventMetadata, error)
 	Subscribe(ctx context.Context, h stream.EventHandler, opts ...stream.ProjOption) (stream.Drainer, error)
 }
 
@@ -95,11 +95,11 @@ type eventStream interface {
 // Each command is executed in a transactional manner, ensuring that the aggregate state is consistent.
 // Commands must implement the Executer interface.
 type Mutator[T any, PT StatePtr[T]] interface {
-	Mutate(ctx context.Context, id ID, modify func(state PT) (Events[T], error)) ([]stream.MsgMetadata, error)
+	Mutate(ctx context.Context, id ID, modify func(state PT) (Events[T], error)) ([]stream.EventMetadata, error)
 }
 
-type kinder interface {
-	Kind(in any) (string, error)
+type eventKinder interface {
+	EventKind(in any) (string, error)
 }
 
 func (a *Aggregate[T, PT]) logger() logger {
@@ -110,12 +110,12 @@ type Aggregate[T any, PT StatePtr[T]] struct {
 	storeConfig storeConfig
 	es          eventStream
 	ss          snapshotStore[T]
-	eventTypes  kinder
+	eventTypes  eventKinder
 	codec       codec.Codec
 }
 
 func (a *Aggregate[T, PT]) EventKind(in Evolver[T]) (string, error) {
-	return a.eventTypes.Kind(in)
+	return a.eventTypes.EventKind(in)
 }
 
 func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapshot[T]) (*snapshot.Aggregate[T], error) {
@@ -127,7 +127,7 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 		aggr = sn.Body
 	}
 
-	events := a.es.Load(ctx, identity.ID(id), aggr.Sequence)
+	events := a.es.LoadEvents(ctx, identity.ID(id), aggr.Sequence)
 	for event, err := range events {
 		if err != nil {
 			if errors.Is(err, ErrNotExists) {
@@ -156,7 +156,7 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 func (a *Aggregate[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error) {
 	var op []stream.ProjOption
 
-	op = append(op, stream.WithName(typereg.TypeNameFrom(h)))
+	op = append(op, stream.WithName(typeregistry.TypeNameFrom(h)))
 	op = append(op, opts...)
 	return a.es.Subscribe(ctx, &subscribeHandlerAdapter[T]{h: h}, op...)
 }
@@ -166,7 +166,7 @@ func (a *Aggregate[T, PT]) Mutate(
 	ctx context.Context, id ID,
 	modify func(state PT) (Events[T], error),
 
-) ([]stream.MsgMetadata, error) {
+) ([]stream.EventMetadata, error) {
 	var (
 		err                       error
 		invError                  error
@@ -203,7 +203,7 @@ func (a *Aggregate[T, PT]) Mutate(
 		msgs[i] = ev
 	}
 
-	storedMsgs, err := a.es.Save(ctx, identity.ID(id), expVersion, msgs)
+	storedMsgs, err := a.es.SaveEvents(ctx, identity.ID(id), expVersion, msgs)
 	if err != nil {
 		return nil, fmt.Errorf("update save: %w", err)
 	}
@@ -276,7 +276,7 @@ func ProjectEvent[E Evolver[T], T any](ctx context.Context, sub eventKindSubscri
 		panic(fmt.Sprintf("unsupported event type: %s", t))
 	}
 
-	n := fmt.Sprintf("%s", typereg.TypeNameFrom(h))
+	n := fmt.Sprintf("%s", typeregistry.TypeNameFrom(h))
 
 	eventKind, err := sub.EventKind(zero.(E))
 

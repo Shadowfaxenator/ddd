@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alekseev-bro/ddd/internal/typereg"
+	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	eventstore1 "github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/snapnats"
@@ -24,12 +24,12 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	strName := fmt.Sprintf("%s", typereg.TypeNameFor[T](typereg.WithDelimiter(":")))
+	strName := fmt.Sprintf("%s", typeregistry.TypeNameFor[T](typeregistry.WithDelimiter(":")))
 	es, err := esnats.NewDriver(ctx, js, strName, cfg.esCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("stream driver: %w", err)
 	}
-	ss, err := snapnats.NewDriver(ctx, js, typereg.TypeNameFor[T](typereg.WithDelimiter("-")), cfg.ssCfg...)
+	ss, err := snapnats.NewDriver(ctx, js, typeregistry.TypeNameFor[T](typeregistry.WithDelimiter("-")), cfg.ssCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot driver: %w", err)
 	}
@@ -38,7 +38,7 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 }
 
 type saver interface {
-	Save(ctx context.Context, aggrID eventstore1.ID, expectedSequence uint64, events []any) ([]stream.MsgMetadata, error)
+	Save(ctx context.Context, aggrID eventstore1.ID, expectedSequence uint64, events []any) ([]stream.EventMetadata, error)
 }
 
 type subscriber interface {

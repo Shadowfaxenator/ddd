@@ -23,17 +23,17 @@ func WithEvent[E any](name string) Option {
 		}
 		name = strings.ReplaceAll(name, ".", "")
 
-		a.Register(name, func() any { return new(E) })
+		a.reg.Register(name, func() any { return new(E) })
 	}
 }
 
 func WithCodec(c codec.Codec) Option {
 	return func(a *stream) {
-		a.eventSerder = serde.NewSerder[any](a.TypeRegistry, c)
+		a.eventSerder = serde.NewSerder[any](a.reg, c)
 	}
 }
 
-func WithLogger(logger Logger) Option {
+func WithLogger(logger logger) Option {
 	return func(a *stream) {
 		a.logger = logger
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 )
 
@@ -12,11 +13,7 @@ type Serder[T any] interface {
 	Deserialize(string, []byte) (T, error)
 }
 
-type Creator interface {
-	Create(name string) (any, error)
-}
-
-func NewSerder[T any](reg Creator, c codec.Codec) *serder[T] {
+func NewSerder[T any](reg typeregistry.Creator, c codec.Codec) *serder[T] {
 	t := reflect.TypeFor[T]()
 	if t.Kind() != reflect.Interface {
 		panic("type T is not an interface")
@@ -30,7 +27,7 @@ func NewSerder[T any](reg Creator, c codec.Codec) *serder[T] {
 
 type serder[T any] struct {
 	codec codec.Codec
-	reg   Creator
+	reg   typeregistry.Creator
 }
 
 func (j *serder[T]) Serialize(v T) ([]byte, error) {

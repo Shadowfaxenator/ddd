@@ -11,7 +11,7 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/identity"
 )
 
-type Logger interface {
+type logger interface {
 	Error(msg string, args ...any)
 }
 type Aggregate[T any] struct {
@@ -34,11 +34,11 @@ type Snapshot[T any] struct {
 
 type store[T any] struct {
 	codec  codec.Codec
-	ss     Driver
-	logger Logger
+	ss     Store
+	logger logger
 }
 
-func NewStore[T any](ss Driver, opts ...Option[T]) *store[T] {
+func NewStore[T any](ss Store, opts ...Option[T]) *store[T] {
 	s := &store[T]{
 		codec:  codec.JSON,
 		ss:     ss,
@@ -81,7 +81,7 @@ func (s *store[T]) Load(ctx context.Context, id identity.ID) (*Snapshot[T], bool
 	return snapshot, true
 }
 
-type Driver interface {
+type Store interface {
 	Save(ctx context.Context, key int64, value []byte) error
 	Load(ctx context.Context, key int64) (*Value, error)
 }

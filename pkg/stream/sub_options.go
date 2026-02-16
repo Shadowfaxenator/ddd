@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 )
 
@@ -10,7 +11,7 @@ type SubscribeParams struct {
 	Kind        []string
 	AggrID      string
 	QoS         qos.QoS
-	Reg         nameForer
+	Reg         typeregistry.Kinder
 }
 
 func WithFilterByAggregateID(id string) ProjOption {
