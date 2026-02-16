@@ -93,11 +93,15 @@ func (s *stream) EventKind(in any) (string, error) {
 
 func validatePointerEvent(ev any) error {
 	if ev == nil {
-		return errors.New("event must be non-nil pointer to struct")
+		return errors.New("event is nil; expected non-nil pointer to struct")
 	}
-	t := reflect.TypeOf(ev)
+	v := reflect.ValueOf(ev)
+	t := v.Type()
 	if t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("invalid event type %T: expected pointer to struct (*Event)", ev)
+		return fmt.Errorf("invalid event %T: expected pointer to struct (*Event)", ev)
+	}
+	if v.IsNil() {
+		return fmt.Errorf("invalid event %T: nil pointer is not allowed", ev)
 	}
 	return nil
 }
