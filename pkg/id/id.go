@@ -21,13 +21,13 @@ func init() {
 	}
 }
 
-func New() int64 {
+func New() (int64, error) {
 
 	id, err := sf.NextID()
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
-	return id
+	return id, nil
 }
 
 func MustParseIDFromString(s string) ID {

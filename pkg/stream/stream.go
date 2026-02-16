@@ -109,8 +109,11 @@ func (s *stream) Save(ctx context.Context, aggrID aggregate.ID, expectedSequence
 		if err != nil {
 			return nil, fmt.Errorf("update: %w", err)
 		}
-
-		msgs = append(msgs, Msg{ID: int64(aggregate.NewEventID()), Body: b, Kind: kind})
+		evid, err := aggregate.NewEventID()
+		if err != nil {
+			return nil, fmt.Errorf("generate event ID: %w", err)
+		}
+		msgs = append(msgs, Msg{ID: int64(evid), Body: b, Kind: kind})
 	}
 	var idemp int64
 	if i, ok := idempotency.KeyFromContext(ctx); ok {

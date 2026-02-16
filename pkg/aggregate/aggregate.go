@@ -13,12 +13,20 @@ func (i ID) I64() int64 {
 	return int64(i)
 }
 
-func NewEventID() EventID {
-	return EventID(id.New())
+func NewEventID() (EventID, error) {
+	i, err := id.New()
+	if err != nil {
+		return EventID(0), err
+	}
+	return EventID(i), nil
 }
 
-func NewID() ID {
-	return ID(id.New())
+func NewID() (ID, error) {
+	i, err := id.New()
+	if err != nil {
+		return ID(0), err
+	}
+	return ID(i), nil
 }
 
 func (i EventID) String() string {
