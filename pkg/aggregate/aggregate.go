@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/alekseev-bro/ddd/internal/typeregistry"
-	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/identity"
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
 	"github.com/alekseev-bro/ddd/pkg/stream"
@@ -88,7 +87,7 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 	for _, o := range opts {
 		o(opt)
 	}
-	str := stream.New(ctx, es, opt.streamOptions...)
+	str := stream.New(es, opt.streamOptions...)
 	snap := snapshot.NewStore[T](ss, opt.snapshotOptions...)
 
 	aggr := &Aggregate[T, PT]{
@@ -152,7 +151,6 @@ type Aggregate[T any, PT StatePtr[T]] struct {
 	es          eventStream
 	ss          snapshotStore[T]
 	eventTypes  eventKinder
-	codec       codec.Codec
 	snapChan    chan *snapshot.Aggregate[T]
 }
 

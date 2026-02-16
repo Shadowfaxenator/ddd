@@ -31,7 +31,7 @@ const (
 	Memory
 )
 
-type eventStreamDriver struct {
+type eventStore struct {
 	name string
 	*eventStreamConfig
 	// TODO: impl partitioning
@@ -42,7 +42,7 @@ const (
 	defaultDeduplication time.Duration = time.Minute * 2
 )
 
-func NewDriver(ctx context.Context, js jetstream.JetStream, name string, opts ...Option) (*eventStreamDriver, error) {
+func NewStore(ctx context.Context, js jetstream.JetStream, name string, opts ...Option) (*eventStore, error) {
 	cfg := &eventStreamConfig{
 		StoreType:     Disk,
 		Deduplication: defaultDeduplication,
@@ -52,7 +52,7 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, opts ..
 		opt(cfg)
 	}
 
-	stream := &eventStreamDriver{name: name, js: js, eventStreamConfig: cfg}
+	stream := &eventStore{name: name, js: js, eventStreamConfig: cfg}
 
 	_, err := stream.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Subjects:           []string{stream.allSubjects()},
@@ -70,18 +70,18 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, opts ..
 	return stream, nil
 }
 
-func (s *eventStreamDriver) subjectNameForID(agrid string) string {
+func (s *eventStore) subjectNameForID(agrid string) string {
 	return fmt.Sprintf("%s.%s", s.name, agrid)
 }
-func (s *eventStreamDriver) allSubjectsForID(agrid string) string {
+func (s *eventStore) allSubjectsForID(agrid string) string {
 	return fmt.Sprintf("%s.%s.>", s.name, agrid)
 }
 
-func (s *eventStreamDriver) allSubjects() string {
+func (s *eventStore) allSubjects() string {
 	return fmt.Sprintf("%s.>", s.name)
 }
 
-func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotencyKey int64) ([]stream.EventMetadata, error) {
+func (s *eventStore) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotencyKey int64) ([]stream.EventMetadata, error) {
 	strAggrID := strconv.FormatInt(aggrID, 10)
 	if msgs == nil {
 		return nil, nil
@@ -150,7 +150,7 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 	return outmsgs, nil
 }
 
-func (s *eventStreamDriver) Load(ctx context.Context, aggrID int64, fromSeq uint64, handler func(*stream.StoredMsg) error) error {
+func (s *eventStore) Load(ctx context.Context, aggrID int64, fromSeq uint64, handler func(*stream.StoredMsg) error) error {
 	strAggrID := strconv.FormatInt(aggrID, 10)
 	subj := s.allSubjectsForID(strAggrID)
 	msgs, err := jetstreamext.GetBatch(ctx,
@@ -212,7 +212,7 @@ func aggrIDFromParams(params *stream.SubscribeParams) string {
 	return "*"
 }
 
-func (e *eventStreamDriver) processMessage(m natsMessage, a ackNaker, handler func(msg *stream.StoredMsg) error) {
+func (e *eventStore) processMessage(m natsMessage, a ackNaker, handler func(msg *stream.StoredMsg) error) {
 
 	sm, err := streamMsgFromNatsMsg(m)
 	if err != nil {
@@ -231,7 +231,7 @@ func (e *eventStreamDriver) processMessage(m natsMessage, a ackNaker, handler fu
 	a.Ack()
 }
 
-func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *stream.StoredMsg) error, params *stream.SubscribeParams) (stream.Drainer, error) {
+func (e *eventStore) Subscribe(ctx context.Context, handler func(msg *stream.StoredMsg) error, params *stream.SubscribeParams) (stream.Drainer, error) {
 
 	maxpend := maxAckPending
 	if params.QoS.Ordering == qos.Ordered {

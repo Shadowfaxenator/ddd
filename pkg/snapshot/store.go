@@ -42,14 +42,14 @@ type Snapshot[T any] struct {
 	Timestamp time.Time
 }
 
-type store[T any] struct {
+type snapshotStore[T any] struct {
 	codec  codec.Codec
 	ss     Store
 	logger logger
 }
 
-func NewStore[T any](ss Store, opts ...Option[T]) *store[T] {
-	s := &store[T]{
+func NewStore[T any](ss Store, opts ...Option[T]) *snapshotStore[T] {
+	s := &snapshotStore[T]{
 		codec:  codec.JSON,
 		ss:     ss,
 		logger: slog.Default(),
@@ -60,7 +60,7 @@ func NewStore[T any](ss Store, opts ...Option[T]) *store[T] {
 	return s
 }
 
-func (s *store[T]) Save(ctx context.Context, a *Aggregate[T]) error {
+func (s *snapshotStore[T]) Save(ctx context.Context, a *Aggregate[T]) error {
 
 	b, err := s.codec.Marshal(a)
 	if err != nil {
@@ -68,7 +68,7 @@ func (s *store[T]) Save(ctx context.Context, a *Aggregate[T]) error {
 	}
 	return s.ss.Save(ctx, a.ID.Int64(), b)
 }
-func (s *store[T]) Load(ctx context.Context, id identity.ID) *Snapshot[T] {
+func (s *snapshotStore[T]) Load(ctx context.Context, id identity.ID) *Snapshot[T] {
 
 	snap, err := s.ss.Load(ctx, id.Int64())
 	if err != nil {

@@ -12,10 +12,6 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-type Store[T any, PT aggregate.StatePtr[T]] struct {
-	js jetstream.JetStream
-}
-
 func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) (*aggregate.Aggregate[T, PT], error) {
 
 	cfg := &options[T, PT]{}
@@ -23,7 +19,7 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 		opt(cfg)
 	}
 	strName := fmt.Sprintf("%s", typeregistry.TypeNameFor[T](typeregistry.WithDelimiter(":")))
-	es, err := esnats.NewDriver(ctx, js, strName, cfg.esCfg...)
+	es, err := esnats.NewStore(ctx, js, strName, cfg.esCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("stream driver: %w", err)
 	}

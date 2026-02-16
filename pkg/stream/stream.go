@@ -39,7 +39,7 @@ type stream struct {
 	logger      logger
 }
 
-func New(ctx context.Context, sub Store, opts ...Option) *stream {
+func New(sub Store, opts ...Option) *stream {
 	reg := typeregistry.New()
 	ser := serde.NewSerder[any](reg, codec.JSON)
 	st := &stream{
