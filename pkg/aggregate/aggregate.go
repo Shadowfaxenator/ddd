@@ -260,7 +260,10 @@ type handleEventAdapter[E Evolver[T], T any] struct {
 }
 
 func (h *handleEventAdapter[E, T]) HandleEvents(ctx context.Context, event Evolver[T]) error {
-	return h.h.HandleEvent(ctx, event.(E))
+	if e, ok := event.(E); ok {
+		return h.h.HandleEvent(ctx, e)
+	}
+	return stream.NonRetriableError{Err: fmt.Errorf("event is not Evolver[T]")}
 }
 
 type subscribeHandlerAdapter[T any] struct {
