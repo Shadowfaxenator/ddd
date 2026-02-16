@@ -15,8 +15,8 @@ type logger interface {
 }
 
 type storeConfig struct {
-	SnapshotMsgThreshold byte
-	SnapshotMaxInterval  time.Duration
+	SnapshotMsgThreshold uint16
+	SnapshotMinInterval  time.Duration
 	SnapshotTimeout      time.Duration
 	Logger               logger
 }
@@ -43,11 +43,39 @@ func WithEvent[E any, T any, PE interface {
 	}
 }
 
-func WithSnapshot[T any, PT StatePtr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) Option[T, PT] {
+// WithSnapshotMinInterval sets the minimum interval between snapshots. Not less than snapshot.UpperMinInterval second and not more than snapshot.LowerMinInterval minutes.
+func WithSnapshotMinInterval[T any, PT StatePtr[T]](interval time.Duration) Option[T, PT] {
 	return func(a *storeOptions[T, PT]) {
-		a.storeConfig.SnapshotMaxInterval = maxInterval
-		a.storeConfig.SnapshotMsgThreshold = maxMsgs
+		if interval > snapshot.UpperMinInterval || interval < snapshot.LowerMinInterval {
+			return
+		}
+		a.storeConfig.SnapshotMinInterval = interval
+	}
+}
+
+// WithSnapshotTimeout sets the timeout for snapshotting. Not less than snapshot.UpperTimeout second and not more than snapshot.LowerTimeout seconds.
+func WithSnapshotTimeout[T any, PT StatePtr[T]](timeout time.Duration) Option[T, PT] {
+	return func(a *storeOptions[T, PT]) {
+		if timeout > snapshot.UpperTimeout || timeout < snapshot.LowerTimeout {
+			return
+		}
 		a.storeConfig.SnapshotTimeout = timeout
+	}
+}
+
+func WithSnapshotEventCount[T any, PT StatePtr[T]](count uint16) Option[T, PT] {
+	return func(a *storeOptions[T, PT]) {
+
+		a.storeConfig.SnapshotMsgThreshold = count
+	}
+}
+
+func WithSnapshotMsgThreshold[T any, PT StatePtr[T]](threshold uint16) Option[T, PT] {
+	return func(a *storeOptions[T, PT]) {
+		if threshold > 10000 || threshold < 1 {
+			return
+		}
+		a.storeConfig.SnapshotMsgThreshold = threshold
 	}
 }
 

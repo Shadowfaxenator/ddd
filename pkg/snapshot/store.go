@@ -11,6 +11,22 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/identity"
 )
 
+const (
+	DefaultSizeInEvents uint16        = 100
+	DefaultMinInterval  time.Duration = time.Second * 1
+	LowerMinInterval    time.Duration = time.Second * 1
+	UpperMinInterval    time.Duration = time.Minute * 10
+	DefaultTimeout      time.Duration = time.Second * 5
+	LowerTimeout        time.Duration = time.Second * 1
+	UpperTimeout        time.Duration = time.Second * 10
+)
+
+type Rules struct {
+	SizeInEvents uint16
+	MinInterval  time.Duration
+	Timeout      time.Duration
+}
+
 type logger interface {
 	Error(msg string, args ...any)
 }

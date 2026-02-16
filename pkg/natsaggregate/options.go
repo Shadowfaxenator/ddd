@@ -4,15 +4,15 @@ import (
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
-	eventstore1 "github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/snapnats"
 	"github.com/alekseev-bro/ddd/pkg/drivers/stream/esnats"
+	"github.com/alekseev-bro/ddd/pkg/snapshot"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-type Logger interface {
+type logger interface {
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
@@ -48,16 +48,35 @@ func WithDeduplication[T any, PT aggregate.StatePtr[T]](duration time.Duration) 
 
 func WithEvent[E any, T any, PE interface {
 	*E
-	eventstore1.Evolver[T]
+	aggregate.Evolver[T]
 }, PT aggregate.StatePtr[T]](name string) option[T, PT] {
 	return func(o *options[T, PT]) {
 		o.agOpts = append(o.agOpts, aggregate.WithEvent[E, T, PE, PT](name))
 	}
 }
 
-func WithSnapshot[T any, PT aggregate.StatePtr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) option[T, PT] {
+func WithSnapshotMinInterval[T any, PT aggregate.StatePtr[T]](interval time.Duration) option[T, PT] {
 	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, aggregate.WithSnapshot[T, PT](maxMsgs, maxInterval, timeout))
+		if interval > snapshot.UpperMinInterval || interval < snapshot.LowerMinInterval {
+			return
+		}
+		a.agOpts = append(a.agOpts, aggregate.WithSnapshotMinInterval[T, PT](interval))
+	}
+}
+
+// WithSnapshotTimeout sets the timeout for snapshotting. Not less than snapshot.UpperTimeout second and not more than snapshot.LowerTimeout seconds.
+func WithSnapshotTimeout[T any, PT aggregate.StatePtr[T]](timeout time.Duration) option[T, PT] {
+	return func(a *options[T, PT]) {
+		if timeout > snapshot.UpperTimeout || timeout < snapshot.LowerTimeout {
+			return
+		}
+		a.agOpts = append(a.agOpts, aggregate.WithSnapshotTimeout[T, PT](timeout))
+	}
+}
+
+func WithSnapshotEventCount[T any, PT aggregate.StatePtr[T]](count uint16) option[T, PT] {
+	return func(a *options[T, PT]) {
+		a.agOpts = append(a.agOpts, aggregate.WithSnapshotEventCount[T, PT](count))
 	}
 }
 
@@ -67,7 +86,7 @@ func WithCodec[T any, PT aggregate.StatePtr[T]](codec codec.Codec) option[T, PT]
 	}
 }
 
-func WithLogger[T any, PT aggregate.StatePtr[T]](logger Logger) option[T, PT] {
+func WithLogger[T any, PT aggregate.StatePtr[T]](logger logger) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, aggregate.WithLogger[T, PT](logger))
 		a.esCfg = append(a.esCfg, esnats.WithLogger(logger))

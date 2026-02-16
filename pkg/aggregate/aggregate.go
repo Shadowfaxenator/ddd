@@ -19,12 +19,6 @@ import (
 
 type messageCount uint
 
-const (
-	snapshotSize     messageCount  = 100
-	snapshotInterval time.Duration = time.Second * 1
-	snapshotTimeout  time.Duration = time.Second * 5
-)
-
 // Aggregate store type it implements the Aggregate interface.
 type StatePtr[T any] interface {
 	*T
@@ -39,9 +33,9 @@ type snapshotStore[T any] interface {
 func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapshot.Store, opts ...Option[T, PT]) *Aggregate[T, PT] {
 	opt := new(storeOptions[T, PT])
 	opt.storeConfig = storeConfig{
-		SnapshotMsgThreshold: byte(snapshotSize),
-		SnapshotMaxInterval:  snapshotInterval,
-		SnapshotTimeout:      snapshotTimeout,
+		SnapshotMsgThreshold: snapshot.DefaultSizeInEvents,
+		SnapshotMinInterval:  snapshot.DefaultMinInterval,
+		SnapshotTimeout:      snapshot.DefaultTimeout,
 		Logger:               slog.Default(),
 	}
 	for _, o := range opts {
@@ -215,7 +209,7 @@ func (a *Aggregate[T, PT]) Mutate(
 		}
 		aggr.Version += uint64(numevents)
 		notSnaphottedEventsNumber = aggr.Version - numEventsBeforeBuild
-		if notSnaphottedEventsNumber >= uint64(a.storeConfig.SnapshotMsgThreshold) && time.Since(snapTime) > a.storeConfig.SnapshotMaxInterval {
+		if notSnaphottedEventsNumber >= uint64(a.storeConfig.SnapshotMsgThreshold) && time.Since(snapTime) > a.storeConfig.SnapshotMinInterval {
 			evts.Evolve(aggr.State)
 			if len(storedMsgs) > 0 {
 				aggr.Sequence = storedMsgs[len(storedMsgs)-1].Sequence
