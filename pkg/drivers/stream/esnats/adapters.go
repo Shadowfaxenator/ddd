@@ -150,6 +150,9 @@ func (n natsJSMsgAdapter) Headers() nats.Header {
 func streamMsgFromNatsMsg(msg natsMessage) (*stream.StoredMsg, error) {
 
 	subjectParts := strings.Split(msg.Subject(), ".")
+	if len(subjectParts) < 3 {
+		return nil, fmt.Errorf("invalid subject format")
+	}
 	kind := subjectParts[2]
 
 	//	ev := typereg.GetType(kind, msg.Data())
