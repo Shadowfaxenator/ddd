@@ -26,12 +26,26 @@ const (
 )
 
 type options[T any, PT aggregate.StatePtr[T]] struct {
-	esCfg  []natsstream.Option
-	ssCfg  []natssnapshot.Option
-	agOpts []aggregate.Option[T, PT]
+	streamName        string
+	snapshotStoreName string
+	esCfg             []natsstream.Option
+	ssCfg             []natssnapshot.Option
+	agOpts            []aggregate.Option[T, PT]
 }
 
 type option[T any, PT aggregate.StatePtr[T]] func(c *options[T, PT])
+
+func WithStreamName[T any, PT aggregate.StatePtr[T]](name string) option[T, PT] {
+	return func(opts *options[T, PT]) {
+		opts.streamName = name
+	}
+}
+
+func WithSnapshotStoreName[T any, PT aggregate.StatePtr[T]](name string) option[T, PT] {
+	return func(opts *options[T, PT]) {
+		opts.snapshotStoreName = name
+	}
+}
 
 func WithInMemory[T any, PT aggregate.StatePtr[T]]() option[T, PT] {
 	return func(opts *options[T, PT]) {

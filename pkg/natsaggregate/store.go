@@ -18,12 +18,18 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	strName := fmt.Sprintf("%s", typeregistry.TypeNameFor[T](typeregistry.WithDelimiter(":")))
-	es, err := natsstream.NewStore(ctx, js, strName, cfg.esCfg...)
+	if cfg.snapshotStoreName == "" {
+		cfg.snapshotStoreName = fmt.Sprintf("%s", typeregistry.TypeNameFor[T](typeregistry.WithDelimiter("-")))
+	}
+	if cfg.streamName == "" {
+		cfg.streamName = fmt.Sprintf("%s", typeregistry.TypeNameFor[T](typeregistry.WithDelimiter(":")))
+	}
+
+	es, err := natsstream.NewStore(ctx, js, cfg.streamName, cfg.esCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("stream driver: %w", err)
 	}
-	ss, err := natssnapshot.NewStore(ctx, js, typeregistry.TypeNameFor[T](typeregistry.WithDelimiter("-")), cfg.ssCfg...)
+	ss, err := natssnapshot.NewStore(ctx, js, cfg.snapshotStoreName, cfg.ssCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot driver: %w", err)
 	}

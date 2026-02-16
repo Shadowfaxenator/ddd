@@ -95,12 +95,6 @@ func TypeNameFor[T any](opts ...typeNameFromOption) string {
 	return TypeNameFrom(zero, opts...)
 }
 
-type typeNameFromOption string
-
-func WithDelimiter(delimiter string) typeNameFromOption {
-	return typeNameFromOption(delimiter)
-}
-
 type Kinder interface {
 	Kind(in any) (string, error)
 }
@@ -116,9 +110,10 @@ type CreateKinderRegistry interface {
 }
 
 func TypeNameFrom(e any, opts ...typeNameFromOption) string {
-	delim := "::"
+
+	cfg := &typeNameFromOptions{delimiter: "::"}
 	for _, opt := range opts {
-		delim = string(opt)
+		opt(cfg)
 	}
 	t := reflect.TypeOf(e)
 	if t.Kind() == reflect.Pointer {
@@ -128,15 +123,17 @@ func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	sha := sha1.New()
 	sha.Write([]byte(t.PkgPath()))
 	bctx := base64.RawURLEncoding.EncodeToString(sha.Sum(nil)[:5])
-
+	var tname string
 	switch t.Kind() {
-
 	case reflect.Struct:
-		return fmt.Sprintf("%s%s%s", t.Name(), delim, bctx)
+		tname = t.Name()
 	case reflect.Pointer:
-		return fmt.Sprintf("%s%s%s", t.Elem().Name(), delim, bctx)
+		tname = t.Elem().Name()
 	default:
-		return fmt.Sprintf("%s%s%s", strconv.FormatUint(rand.Uint64(), 10), delim, bctx)
+		tname = strconv.FormatUint(rand.Uint64(), 10)
 	}
-
+	if cfg.noPkg {
+		return tname
+	}
+	return fmt.Sprintf("%s%s%s", tname, cfg.delimiter, bctx)
 }
