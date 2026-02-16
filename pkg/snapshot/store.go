@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
+	"github.com/alekseev-bro/ddd/internal/prettylog"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/identity"
 )
@@ -52,7 +52,7 @@ func NewStore[T any](ss Store, opts ...Option[T]) *snapshotStore[T] {
 	s := &snapshotStore[T]{
 		codec:  codec.JSON,
 		ss:     ss,
-		logger: slog.Default(),
+		logger: prettylog.NewDefault(),
 	}
 	for _, opt := range opts {
 		opt(s)

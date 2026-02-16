@@ -5,42 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"log/slog"
-	"os"
 	"reflect"
 	"time"
 
+	"github.com/alekseev-bro/ddd/internal/prettylog"
 	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/identity"
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
 	"github.com/alekseev-bro/ddd/pkg/stream"
-	"github.com/lmittmann/tint"
 )
-
-func init() {
-	w := os.Stderr
-	var handler slog.Handler
-	if os.Getenv("ENV") == "production" {
-		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})
-	} else {
-		handler = tint.NewHandler(w, &tint.Options{
-			ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
-				switch attr.Key {
-				case slog.MessageKey:
-					return tint.Attr(4, attr)
-				}
-
-				return attr
-			},
-			Level:      slog.LevelDebug,
-			TimeFormat: time.Kitchen,
-		})
-	}
-	l := slog.New(handler)
-	slog.SetDefault(l)
-}
 
 // Aggregate store type it implements the Aggregate interface.
 type StatePtr[T any] interface {
@@ -81,7 +54,7 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 		SnapshotMsgThreshold: snapshot.DefaultSizeInEvents,
 		SnapshotMinInterval:  snapshot.DefaultMinInterval,
 		SnapshotTimeout:      snapshot.DefaultTimeout,
-		Logger:               slog.Default(),
+		Logger:               prettylog.NewDefault(),
 		SnapshotMaxTasks:     255,
 	}
 	for _, o := range opts {

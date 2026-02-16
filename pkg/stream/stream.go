@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"log/slog"
 	"time"
 
+	"github.com/alekseev-bro/ddd/internal/prettylog"
 	"github.com/alekseev-bro/ddd/internal/serde"
 	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/codec"
@@ -46,7 +46,7 @@ func New(sub Store, opts ...Option) *stream {
 		store:       sub,
 		reg:         reg,
 		eventSerder: ser,
-		logger:      slog.Default(),
+		logger:      prettylog.NewDefault(),
 	}
 	for _, opt := range opts {
 		opt(st)

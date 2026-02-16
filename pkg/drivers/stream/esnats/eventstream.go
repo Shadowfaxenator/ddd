@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"time"
 
+	"github.com/alekseev-bro/ddd/internal/prettylog"
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/stream"
@@ -46,7 +46,7 @@ func NewStore(ctx context.Context, js jetstream.JetStream, name string, opts ...
 	cfg := &eventStreamConfig{
 		StoreType:     Disk,
 		Deduplication: defaultDeduplication,
-		Logger:        slog.Default(),
+		Logger:        prettylog.NewDefault(),
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -84,7 +84,7 @@ func (s *eventStore) allSubjects() string {
 func (s *eventStore) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotencyKey int64) ([]stream.EventMetadata, error) {
 	strAggrID := strconv.FormatInt(aggrID, 10)
 	if msgs == nil {
-		return nil, nil
+		return nil, stream.NonRetriableError{Err: errors.New("no messages to save")}
 	}
 
 	nmsgs := make([]*nats.Msg, len(msgs))
@@ -115,7 +115,7 @@ func (s *eventStore) Save(ctx context.Context, aggrID int64, expectedSequence ui
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msgs[0].Kind)
 		if ack.Duplicate {
 			s.Logger.Warn("duplicate event not stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
-			return nil, nil
+			return nil, stream.NonRetriableError{Err: errors.New("duplicate event")}
 		}
 
 		s.Logger.Info("event stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
