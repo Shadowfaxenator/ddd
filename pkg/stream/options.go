@@ -31,7 +31,7 @@ func WithCodec(c codec.Codec) Option {
 	}
 }
 
-func WithLogger(logger InfoErrorer) Option {
+func WithLogger(logger Logger) Option {
 	return func(a *stream) {
 		a.logger = logger
 	}

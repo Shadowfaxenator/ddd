@@ -11,7 +11,7 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/stream"
 )
 
-type InfoErrorer interface {
+type Logger interface {
 	Info(msg string, args ...any)
 	Error(msg string, args ...any)
 }
@@ -20,7 +20,7 @@ type storeConfig struct {
 	SnapshotMsgThreshold byte
 	SnapshotMaxInterval  time.Duration
 	SnapshotTimeout      time.Duration
-	Logger               InfoErrorer
+	Logger               Logger
 }
 
 // func (o StoreOption[T, PT]) ToStreamOption() stream.Option{
@@ -63,7 +63,7 @@ func WithCodec[T any, PT StatePtr[T]](codec codec.Codec) StoreOption[T, PT] {
 	}
 }
 
-func WithLogger[T any, PT StatePtr[T]](logger InfoErrorer) StoreOption[T, PT] {
+func WithLogger[T any, PT StatePtr[T]](logger Logger) StoreOption[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.storeConfig.Logger = logger
 	}

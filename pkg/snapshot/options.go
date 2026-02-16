@@ -12,7 +12,7 @@ func WithCodec[T any](codec codec.Codec) Option[T] {
 	}
 }
 
-func WithLogger[T any](logger Errorer) Option[T] {
+func WithLogger[T any](logger Logger) Option[T] {
 	return func(s *store[T]) {
 		s.logger = logger
 	}

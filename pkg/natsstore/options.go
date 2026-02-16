@@ -12,7 +12,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-type InfoWarnErrorer interface {
+type Logger interface {
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
@@ -67,7 +67,7 @@ func WithSnapshotCodec[T any, PT eventstore.StatePtr[T]](codec codec.Codec) opti
 	}
 }
 
-func WithLogger[T any, PT eventstore.StatePtr[T]](logger InfoWarnErrorer) option[T, PT] {
+func WithLogger[T any, PT eventstore.StatePtr[T]](logger Logger) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, eventstore.WithLogger[T, PT](logger))
 		a.esCfg = append(a.esCfg, esnats.WithLogger(logger))

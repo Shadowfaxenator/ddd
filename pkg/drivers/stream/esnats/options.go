@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-type InfoWarnErrorer interface {
+type Logger interface {
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
@@ -14,7 +14,7 @@ type eventStreamConfig struct {
 	StoreType     StoreType
 	PartitionNum  byte
 	Deduplication time.Duration
-	Logger        InfoWarnErrorer
+	Logger        Logger
 }
 
 type Option func(*eventStreamConfig)
@@ -33,7 +33,7 @@ func WithStoreType(storeType StoreType) Option {
 	}
 }
 
-func WithLogger(logger InfoWarnErrorer) Option {
+func WithLogger(logger Logger) Option {
 	return func(es *eventStreamConfig) {
 		es.Logger = logger
 

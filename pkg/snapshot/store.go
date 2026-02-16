@@ -11,7 +11,7 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/codec"
 )
 
-type Errorer interface {
+type Logger interface {
 	Error(msg string, args ...any)
 }
 
@@ -28,7 +28,7 @@ type Snapshot[T any] struct {
 type store[T any] struct {
 	codec  codec.Codec
 	ss     Driver
-	logger Errorer
+	logger Logger
 }
 
 func NewStore[T any](ss Driver, opts ...Option[T]) *store[T] {

@@ -19,7 +19,7 @@ import (
 
 var ErrNonRetriable = errors.New("non-retriable error")
 
-type InfoErrorer interface {
+type Logger interface {
 	Info(msg string, args ...any)
 	Error(msg string, args ...any)
 }
@@ -45,7 +45,7 @@ type stream struct {
 	store Driver
 	typereg.TypeRegistry
 	eventSerder eventSerder
-	logger      InfoErrorer
+	logger      Logger
 }
 
 func New(ctx context.Context, sub Driver, opts ...Option) *stream {
