@@ -23,7 +23,7 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 	if err != nil {
 		return nil, fmt.Errorf("stream driver: %w", err)
 	}
-	ss, err := snapnats.NewDriver(ctx, js, typeregistry.TypeNameFor[T](typeregistry.WithDelimiter("-")), cfg.ssCfg...)
+	ss, err := snapnats.NewStore(ctx, js, typeregistry.TypeNameFor[T](typeregistry.WithDelimiter("-")), cfg.ssCfg...)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot driver: %w", err)
 	}
