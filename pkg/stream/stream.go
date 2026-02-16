@@ -34,6 +34,7 @@ type Store interface {
 type eventSerder serde.Serder[any]
 
 type stream struct {
+	subs        DrainList
 	name        string
 	store       Store
 	reg         typeregistry.CreateKinderRegistry
@@ -203,8 +204,16 @@ func (d DrainList) Drain() error {
 	}
 }
 
+func (s *stream) Drain() error {
+	if err := s.subs.Drain(); err != nil {
+		return fmt.Errorf("steam drain: %w", err)
+	}
+
+	return nil
+}
+
 // Subscribe creates a new subscription on aggegate events with the given handler.
-func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOption) (Drainer, error) {
+func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOption) error {
 	dn := typeregistry.TypeNameFrom(h)
 
 	params := &SubscribeParams{
@@ -226,8 +235,10 @@ func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOpti
 		}
 		return h.HandleEvents(ContextWithIdempotencyKey(ctx, msg.ID), ev)
 	}, params)
-	if err == nil {
-		a.logger.Info("subscription created", "subscription", params.DurableName)
+	if err != nil {
+		return fmt.Errorf("stream subscription failed: %w", err)
 	}
-	return d, nil
+	a.subs = append(a.subs, d)
+	a.logger.Info("subscription created", "subscription", params.DurableName)
+	return nil
 }

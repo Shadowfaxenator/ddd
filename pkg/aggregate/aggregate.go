@@ -24,6 +24,14 @@ type snapshotStore[T any] interface {
 	Load(ctx context.Context, id identity.ID) *snapshot.Snapshot[T]
 }
 
+func (ag *Aggregate[T, PT]) Drain() error {
+	close(ag.snapChan)
+	if err := ag.es.Drain(); err != nil {
+		return fmt.Errorf("aggregate drain failed: %w", err)
+	}
+	return nil
+}
+
 func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
 	go func(ctx context.Context) {
 		for {
@@ -86,7 +94,7 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 // Subscriber is an interface that defines the Project method for projecting events on an
 // Events must implement the Event interface.
 type Subscriber[T any] interface {
-	Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error)
+	Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) error
 }
 type eventKindSubscriber[T any] interface {
 	Subscriber[T]
@@ -108,7 +116,8 @@ type EventHandler[T any, E Evolver[T]] interface {
 type eventStream interface {
 	LoadEvents(ctx context.Context, id identity.ID, seq uint64) iter.Seq2[*stream.Event, error]
 	SaveEvents(ctx context.Context, id identity.ID, expectedSequence uint64, events []any) ([]stream.EventMetadata, error)
-	Subscribe(ctx context.Context, h stream.EventHandler, opts ...stream.ProjOption) (stream.Drainer, error)
+	Subscribe(ctx context.Context, h stream.EventHandler, opts ...stream.ProjOption) error
+	Drain() error
 }
 
 // Mutator is an interface that defines the Update method for executing commands on an
@@ -176,12 +185,16 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 	return aggr, nil
 }
 
-func (a *Aggregate[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error) {
+func (a *Aggregate[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) error {
 	var op []stream.ProjOption
 
 	op = append(op, stream.WithName(typeregistry.TypeNameFrom(h)))
 	op = append(op, opts...)
-	return a.es.Subscribe(ctx, &subscribeHandlerAdapter[T]{h: h}, op...)
+	if err := a.es.Subscribe(ctx, &subscribeHandlerAdapter[T]{h: h}, op...); err != nil {
+		return fmt.Errorf("subscription failed: %w", err)
+	}
+
+	return nil
 }
 
 // Update executes a command on the aggregate root.
@@ -290,15 +303,23 @@ type pointerEvent[E any, T any] interface {
 	Evolver[T]
 }
 
-func ProjectEvent[E any, T any, PE pointerEvent[E, T]](ctx context.Context, sub eventKindSubscriber[T], h EventHandler[T, PE]) (stream.Drainer, error) {
+func ProjectEvent[E any, T any, PE pointerEvent[E, T]](ctx context.Context, sub eventKindSubscriber[T], h EventHandler[T, PE]) error {
 	var sentinel PE
 
 	n := fmt.Sprintf("%s", typeregistry.TypeNameFrom(h))
 
 	eventKind, err := sub.EventKind(sentinel)
 	if err != nil {
-		return nil, fmt.Errorf("project: %w", err)
+		return fmt.Errorf("project event failed: %w", err)
 	}
-	return sub.Subscribe(ctx, &handleEventAdapter[PE, T]{h: h}, stream.WithFilterByEvent(eventKind), stream.WithName(n))
+	if err := sub.Subscribe(
+		ctx,
+		&handleEventAdapter[PE, T]{h: h},
+		stream.WithFilterByEvent(eventKind),
+		stream.WithName(n),
+	); err != nil {
+		return fmt.Errorf("project event failed: %w", err)
+	}
+	return nil
 
 }
