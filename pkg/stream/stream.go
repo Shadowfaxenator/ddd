@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"reflect"
 	"time"
 
 	"github.com/alekseev-bro/ddd/internal/prettylog"
@@ -90,21 +91,37 @@ func (s *stream) EventKind(in any) (string, error) {
 	return s.reg.Kind(in)
 }
 
+func validatePointerEvent(ev any) error {
+	if ev == nil {
+		return errors.New("event must be non-nil pointer to struct")
+	}
+	t := reflect.TypeOf(ev)
+	if t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("invalid event type %T: expected pointer to struct (*Event)", ev)
+	}
+	return nil
+}
+
 func (s *stream) SaveEvents(ctx context.Context, aggrID identity.ID, expectedSequence uint64, events []any) ([]EventMetadata, error) {
 
 	var msgs []Msg
 	for _, ev := range events {
+
+		if err := validatePointerEvent(ev); err != nil {
+			return nil, fmt.Errorf("saving events failed: %w", err)
+		}
+
 		b, err := s.eventSerder.Serialize(ev)
 		if err != nil {
-			return nil, fmt.Errorf("save %w", err)
+			return nil, fmt.Errorf("saving events failed: %w", err)
 		}
 		kind, err := s.reg.Kind(ev)
 		if err != nil {
-			return nil, fmt.Errorf("update: %w", err)
+			return nil, fmt.Errorf("saving events failed: %w", err)
 		}
 		evid, err := identity.New()
 		if err != nil {
-			return nil, fmt.Errorf("generate event ID: %w", err)
+			return nil, fmt.Errorf("saving events failed: %w", err)
 		}
 		msgs = append(msgs, Msg{ID: evid.Int64(), Body: b, Kind: kind})
 	}
@@ -114,7 +131,7 @@ func (s *stream) SaveEvents(ctx context.Context, aggrID identity.ID, expectedSeq
 	}
 	smsgs, err := s.store.Save(ctx, int64(aggrID), expectedSequence, msgs, idemp)
 	if err != nil {
-		return nil, fmt.Errorf("save %w", err)
+		return nil, fmt.Errorf("saving events failed: %w", err)
 	}
 
 	return smsgs, nil

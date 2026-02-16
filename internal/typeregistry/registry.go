@@ -78,6 +78,12 @@ func (r *registry) Kind(in any) (string, error) {
 	r.mu.RUnlock()
 
 	if !ok {
+		if t.Kind() != reflect.Pointer {
+			pt := reflect.PointerTo(t)
+			if _, ptrOK := r.types[pt]; ptrOK {
+				return "", fmt.Errorf("registry: %v is registered as %v; emit pointer event", t, pt)
+			}
+		}
 		return "", fmt.Errorf("registry: type %v is not registered", t)
 	}
 	return name, nil
