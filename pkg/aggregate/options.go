@@ -1,13 +1,13 @@
-package eventstore
+package aggregate
 
 import (
 	"fmt"
 	"reflect"
 	"time"
 
-	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
+
 	"github.com/alekseev-bro/ddd/pkg/stream"
 )
 
@@ -36,7 +36,7 @@ type StoreOption[T any, PT StatePtr[T]] func(a *storeOptions[T, PT])
 
 func WithEvent[E any, T any, PE interface {
 	*E
-	aggregate.Evolver[T]
+	Evolver[T]
 }, PT StatePtr[T]](name string) StoreOption[T, PT] {
 
 	if reflect.TypeFor[E]().Kind() != reflect.Struct {

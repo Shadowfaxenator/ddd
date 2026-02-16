@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
-	"github.com/alekseev-bro/ddd/pkg/eventstore"
+	eventstore1 "github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/stream"
 
@@ -168,7 +168,7 @@ func (s *eventStreamDriver) Load(ctx context.Context, aggrID int64, fromSeq uint
 		if err != nil {
 			if errors.Is(err, jetstreamext.ErrNoMessages) {
 
-				return eventstore.ErrNoAggregate
+				return aggregate.ErrNoAggregate
 			}
 			return fmt.Errorf("build func can't get msg batch: %w", err)
 		}
@@ -214,7 +214,7 @@ func aggrIDFromParams(params *stream.SubscribeParams) string {
 }
 
 func (e *eventStreamDriver) processMessage(m natsMessage, a ackNaker, handler func(msg *stream.StoredMsg) error) {
-	var target *aggregate.InvariantViolationError
+	var target *eventstore1.InvariantViolationError
 	sm, err := streamMsgFromNatsMsg(m)
 	if err != nil {
 		e.Logger.Error("load failed", "error", err)

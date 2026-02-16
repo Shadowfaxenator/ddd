@@ -4,10 +4,10 @@ import (
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
+	eventstore1 "github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/snapnats"
 	"github.com/alekseev-bro/ddd/pkg/drivers/stream/esnats"
-	"github.com/alekseev-bro/ddd/pkg/eventstore"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -25,22 +25,22 @@ const (
 	Memory
 )
 
-type options[T any, PT eventstore.StatePtr[T]] struct {
+type options[T any, PT aggregate.StatePtr[T]] struct {
 	esCfg  []esnats.Option
 	ssCfg  []snapnats.Option
-	agOpts []eventstore.StoreOption[T, PT]
+	agOpts []aggregate.StoreOption[T, PT]
 }
 
-type option[T any, PT eventstore.StatePtr[T]] func(c *options[T, PT])
+type option[T any, PT aggregate.StatePtr[T]] func(c *options[T, PT])
 
-func WithInMemory[T any, PT eventstore.StatePtr[T]]() option[T, PT] {
+func WithInMemory[T any, PT aggregate.StatePtr[T]]() option[T, PT] {
 	return func(opts *options[T, PT]) {
 		opts.esCfg = append(opts.esCfg, esnats.WithStoreType(esnats.Memory))
 		opts.ssCfg = append(opts.ssCfg, snapnats.WithStoreType(snapnats.Memory))
 	}
 }
 
-func WithDeduplication[T any, PT eventstore.StatePtr[T]](duration time.Duration) option[T, PT] {
+func WithDeduplication[T any, PT aggregate.StatePtr[T]](duration time.Duration) option[T, PT] {
 	return func(opts *options[T, PT]) {
 		opts.esCfg = append(opts.esCfg, esnats.WithDeduplication(duration))
 	}
@@ -48,28 +48,28 @@ func WithDeduplication[T any, PT eventstore.StatePtr[T]](duration time.Duration)
 
 func WithEvent[E any, T any, PE interface {
 	*E
-	aggregate.Evolver[T]
-}, PT eventstore.StatePtr[T]](name string) option[T, PT] {
+	eventstore1.Evolver[T]
+}, PT aggregate.StatePtr[T]](name string) option[T, PT] {
 	return func(o *options[T, PT]) {
-		o.agOpts = append(o.agOpts, eventstore.WithEvent[E, T, PE, PT](name))
+		o.agOpts = append(o.agOpts, aggregate.WithEvent[E, T, PE, PT](name))
 	}
 }
 
-func WithSnapshot[T any, PT eventstore.StatePtr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) option[T, PT] {
+func WithSnapshot[T any, PT aggregate.StatePtr[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) option[T, PT] {
 	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, eventstore.WithSnapshot[T, PT](maxMsgs, maxInterval, timeout))
+		a.agOpts = append(a.agOpts, aggregate.WithSnapshot[T, PT](maxMsgs, maxInterval, timeout))
 	}
 }
 
-func WithSnapshotCodec[T any, PT eventstore.StatePtr[T]](codec codec.Codec) option[T, PT] {
+func WithSnapshotCodec[T any, PT aggregate.StatePtr[T]](codec codec.Codec) option[T, PT] {
 	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, eventstore.WithCodec[T, PT](codec))
+		a.agOpts = append(a.agOpts, aggregate.WithCodec[T, PT](codec))
 	}
 }
 
-func WithLogger[T any, PT eventstore.StatePtr[T]](logger Logger) option[T, PT] {
+func WithLogger[T any, PT aggregate.StatePtr[T]](logger Logger) option[T, PT] {
 	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, eventstore.WithLogger[T, PT](logger))
+		a.agOpts = append(a.agOpts, aggregate.WithLogger[T, PT](logger))
 		a.esCfg = append(a.esCfg, esnats.WithLogger(logger))
 	}
 }
