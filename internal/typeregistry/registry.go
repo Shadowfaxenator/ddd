@@ -5,11 +5,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/rand/v2"
 	"reflect"
 	"strconv"
 	"sync"
+
+	"github.com/alekseev-bro/ddd/internal/prettylog"
 )
 
 type registry struct {
@@ -26,7 +27,7 @@ type logger interface {
 
 func New(opts ...option) *registry {
 	r := &registry{
-		logger: slog.Default(),
+		logger: prettylog.NewDefault(),
 		ctors:  make(map[string]ctor),
 		types:  make(map[reflect.Type]string),
 	}

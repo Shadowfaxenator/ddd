@@ -55,9 +55,9 @@ func WithDeduplication[T any, PT aggregate.StatePtr[T]](duration time.Duration) 
 func WithEvent[E any, T any, PE interface {
 	*E
 	aggregate.Evolver[T]
-}, PT aggregate.StatePtr[T]](name string) option[T, PT] {
+}, PT aggregate.StatePtr[T]]() option[T, PT] {
 	return func(o *options[T, PT]) {
-		o.agOpts = append(o.agOpts, aggregate.WithEvent[E, T, PE, PT](name))
+		o.agOpts = append(o.agOpts, aggregate.WithEvent[E, T, PE, PT]())
 	}
 }
 

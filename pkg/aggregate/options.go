@@ -37,11 +37,11 @@ type Option[T any, PT StatePtr[T]] func(a *storeOptions[T, PT]) error
 func WithEvent[E any, T any, PE interface {
 	*E
 	Evolver[T]
-}, PT StatePtr[T]](name string) Option[T, PT] {
+}, PT StatePtr[T]]() Option[T, PT] {
 
 	return func(a *storeOptions[T, PT]) error {
 
-		a.streamOptions = append(a.streamOptions, stream.WithEvent[E](name))
+		a.streamOptions = append(a.streamOptions, stream.WithEvent[E]())
 
 		return nil
 	}

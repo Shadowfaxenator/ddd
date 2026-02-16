@@ -3,24 +3,21 @@ package stream
 import (
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/alekseev-bro/ddd/internal/serde"
+	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 )
 
 type Option func(*stream) error
 
-func WithEvent[E any](name string) Option {
+func WithEvent[E any]() Option {
 	return func(a *stream) error {
-		if reflect.TypeFor[E]().Kind() != reflect.Struct {
-			return fmt.Errorf("event '%s' must be a struct and not a pointer", name)
+		t := reflect.TypeFor[E]()
+		if t.Kind() != reflect.Struct {
+			return fmt.Errorf("event '%s' must be a struct and not a pointer", t)
 		}
-		if name == "" {
-			name = reflect.TypeFor[E]().Name()
-		}
-		name = strings.ReplaceAll(name, ".", "")
-
+		name := typeregistry.TypeNameFor[E]()
 		return a.reg.Register(name, func() any { return new(E) })
 	}
 }
