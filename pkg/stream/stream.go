@@ -10,11 +10,8 @@ import (
 
 	"github.com/alekseev-bro/ddd/internal/serde"
 	"github.com/alekseev-bro/ddd/internal/typeregistry"
-
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/identity"
-
-	"github.com/alekseev-bro/ddd/pkg/idempotency"
 )
 
 type logger interface {
@@ -110,7 +107,7 @@ func (s *stream) SaveEvents(ctx context.Context, aggrID identity.ID, expectedSeq
 		msgs = append(msgs, Msg{ID: evid.Int64(), Body: b, Kind: kind})
 	}
 	var idemp int64
-	if i, ok := idempotency.KeyFromContext(ctx); ok {
+	if i, ok := IdempotencyKeyFromContext(ctx); ok {
 		idemp = i
 	}
 	smsgs, err := s.store.Save(ctx, int64(aggrID), expectedSequence, msgs, idemp)
@@ -177,7 +174,7 @@ func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOpti
 			a.logger.Error("can't deserialize event", "kind", msg.Kind)
 			return NonRetriableError{err}
 		}
-		return h.HandleEvents(idempotency.ContextWithKey(ctx, msg.ID), ev)
+		return h.HandleEvents(ContextWithIdempotencyKey(ctx, msg.ID), ev)
 	}, params)
 	if err == nil {
 		a.logger.Info("subscription created", "subscription", params.DurableName)

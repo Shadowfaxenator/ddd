@@ -9,7 +9,6 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/snapnats"
 	"github.com/alekseev-bro/ddd/pkg/drivers/stream/esnats"
 	"github.com/alekseev-bro/ddd/pkg/stream"
-
 	"github.com/nats-io/nats.go/jetstream"
 )
 
