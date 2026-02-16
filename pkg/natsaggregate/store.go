@@ -1,4 +1,4 @@
-package natsstore
+package natsaggregate
 
 import (
 	"context"
