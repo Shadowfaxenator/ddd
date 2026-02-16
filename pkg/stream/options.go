@@ -3,6 +3,7 @@ package stream
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/alekseev-bro/ddd/internal/serde"
 	"github.com/alekseev-bro/ddd/pkg/codec"
@@ -20,6 +21,7 @@ func WithEvent[E any](name string) Option {
 		if name == "" {
 			name = reflect.TypeFor[E]().Name()
 		}
+		name = strings.ReplaceAll(name, ".", "")
 
 		a.Register(name, func() any { return new(E) })
 	}
