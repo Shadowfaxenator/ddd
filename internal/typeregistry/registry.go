@@ -6,38 +6,55 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"reflect"
+	"strconv"
 	"sync"
 )
 
 type registry struct {
-	mu    sync.RWMutex
-	ctors map[string]ctor
-	types map[reflect.Type]string
+	mu     sync.RWMutex
+	ctors  map[string]ctor
+	types  map[reflect.Type]string
+	logger logger
 }
 
-func New() *registry {
-	return &registry{
-		ctors: make(map[string]ctor),
-		types: make(map[reflect.Type]string),
+type logger interface {
+	Warn(msg string, keysAndValues ...any)
+	Info(msg string, keysAndValues ...any)
+}
+
+func New(opts ...option) *registry {
+	r := &registry{
+		logger: slog.Default(),
+		ctors:  make(map[string]ctor),
+		types:  make(map[reflect.Type]string),
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 type ctor = func() any
 
+// Register registers a type, it's not thread safe
 func (r *registry) Register(tname string, c ctor) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.types[reflect.TypeOf(c())]; ok {
-		panic(fmt.Sprintf("type %v is already registered", reflect.TypeOf(c())))
+		r.logger.Warn("type already registered", "kind", reflect.TypeOf(c()))
+		return
+
 	}
 	if _, ok := r.ctors[tname]; ok {
-		panic(fmt.Sprintf("type %q is already registered", tname))
+		r.logger.Warn("type already registered", "kind", tname)
+		return
 	}
 	r.types[reflect.TypeOf(c())] = tname
 	r.ctors[tname] = c
-	slog.Info("event registered", "type", tname)
+	r.logger.Info("type registered", "kind", tname)
 }
 
 func (r *registry) Create(name string) (any, error) {
@@ -102,11 +119,11 @@ func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	//	sep := strings.Split(t.PkgPath(), "/")
+
 	sha := sha1.New()
 	sha.Write([]byte(t.PkgPath()))
 	bctx := base64.RawURLEncoding.EncodeToString(sha.Sum(nil)[:5])
-	//bctx := sep[len(sep)-1]
+
 	switch t.Kind() {
 
 	case reflect.Struct:
@@ -114,7 +131,7 @@ func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	case reflect.Pointer:
 		return fmt.Sprintf("%s%s%s", t.Elem().Name(), delim, bctx)
 	default:
-		panic("unsupported type")
+		return fmt.Sprintf("%s%s%s", strconv.FormatUint(rand.Uint64(), 10), delim, bctx)
 	}
 
 }
