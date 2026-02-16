@@ -14,11 +14,11 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-type Store[T any, PT eventstore.PtrAggr[T]] struct {
+type Store[T any, PT eventstore.StatePtr[T]] struct {
 	js jetstream.JetStream
 }
 
-func New[T any, PT eventstore.PtrAggr[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) (*eventstore.Store[T, PT], error) {
+func New[T any, PT eventstore.StatePtr[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) (*eventstore.Store[T, PT], error) {
 
 	cfg := &options[T, PT]{}
 	for _, opt := range opts {

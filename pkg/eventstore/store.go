@@ -37,7 +37,7 @@ type EventSerder[T any] interface {
 }
 
 // Aggregate store type it implements the Aggregate interface.
-type PtrAggr[T any] interface {
+type StatePtr[T any] interface {
 	*T
 }
 
@@ -47,7 +47,7 @@ type snapshotStore[T any] interface {
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any, PT PtrAggr[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...StoreOption[T, PT]) *Store[T, PT] {
+func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Driver, ss snapshot.Driver, opts ...StoreOption[T, PT]) *Store[T, PT] {
 	opt := new(storeOptions[T, PT])
 	opt.storeConfig = storeConfig{
 		SnapshotMsgThreshold: byte(snapshotSize),
@@ -104,7 +104,7 @@ type eventStream interface {
 // Mutator is an interface that defines the Update method for executing commands on an aggregate.
 // Each command is executed in a transactional manner, ensuring that the aggregate state is consistent.
 // Commands must implement the Executer interface.
-type Mutator[T any, PT PtrAggr[T]] interface {
+type Mutator[T any, PT StatePtr[T]] interface {
 	Mutate(ctx context.Context, id aggregate.ID, modify func(state PT) (aggregate.Events[T], error)) ([]stream.MsgMetadata, error)
 }
 
@@ -112,7 +112,7 @@ type kinder interface {
 	Kind(in any) (string, error)
 }
 
-type Store[T any, PT PtrAggr[T]] struct {
+type Store[T any, PT StatePtr[T]] struct {
 	storeConfig
 	es         eventStream
 	ss         snapshotStore[T]
