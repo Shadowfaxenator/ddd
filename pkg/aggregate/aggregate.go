@@ -107,7 +107,7 @@ type kinder interface {
 	Kind(in any) (string, error)
 }
 
-func (a *Aggregate[T, PT]) logger() Logger {
+func (a *Aggregate[T, PT]) logger() logger {
 	return a.storeConfig.Logger
 }
 
