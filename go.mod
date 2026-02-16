@@ -3,6 +3,7 @@ module github.com/alekseev-bro/ddd
 go 1.26
 
 require (
+	github.com/lmittmann/tint v1.1.3
 	github.com/nats-io/nats.go v1.48.0
 	github.com/sony/sonyflake/v2 v2.2.0
 	github.com/synadia-io/orbit.go/jetstreamext v0.2.0

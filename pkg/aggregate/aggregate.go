@@ -6,18 +6,42 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"os"
 	"reflect"
 	"time"
 
 	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 	"github.com/alekseev-bro/ddd/pkg/identity"
-	"github.com/alekseev-bro/ddd/pkg/stream"
-
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
+	"github.com/alekseev-bro/ddd/pkg/stream"
+	"github.com/lmittmann/tint"
 )
 
-type messageCount uint
+func init() {
+	w := os.Stderr
+	var handler slog.Handler
+	if os.Getenv("ENV") == "production" {
+		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
+	} else {
+		handler = tint.NewHandler(w, &tint.Options{
+			ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
+				switch attr.Key {
+				case slog.MessageKey:
+					return tint.Attr(4, attr)
+				}
+
+				return attr
+			},
+			Level:      slog.LevelDebug,
+			TimeFormat: time.Kitchen,
+		})
+	}
+	l := slog.New(handler)
+	slog.SetDefault(l)
+}
 
 // Aggregate store type it implements the Aggregate interface.
 type StatePtr[T any] interface {
@@ -27,6 +51,28 @@ type StatePtr[T any] interface {
 type snapshotStore[T any] interface {
 	Save(ctx context.Context, a *snapshot.Aggregate[T]) error
 	Load(ctx context.Context, id identity.ID) *snapshot.Snapshot[T]
+}
+
+func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case a, ok := <-ag.snapChan:
+				if !ok {
+					return
+				}
+				ctxSnap, cancel := context.WithTimeout(ctx, ag.storeConfig.SnapshotTimeout)
+				defer cancel()
+				if err := ag.ss.Save(ctxSnap, a); err != nil {
+					ag.logger().Error("snapshot save", "error", err.Error())
+					continue
+				}
+				ag.logger().Info("snapshot saved", "id", a.ID.String(), "version", a.Version, "sequence", a.Sequence)
+			}
+		}
+	}(ctx)
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
@@ -52,19 +98,7 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 		snapChan:    make(chan *snapshot.Aggregate[T], opt.SnapshotMaxTasks),
 		eventTypes:  str,
 	}
-
-	go func() {
-		for a := range aggr.snapChan {
-			ctxSnap, cancel := context.WithTimeout(context.Background(), aggr.storeConfig.SnapshotTimeout)
-			defer cancel()
-			if err := aggr.ss.Save(ctxSnap, a); err != nil {
-				aggr.logger().Error("snapshot save", "error", err.Error())
-			}
-
-			aggr.logger().Info("snapshot saved", "kind", reflect.TypeFor[T]().Name(), "sequence", a.Sequence, "aggregateID", a.ID.String(), "timestamp", a.Timestamp)
-
-		}
-	}()
+	aggr.startSnapshoting(ctx)
 	//	var zero T
 
 	return aggr
@@ -128,6 +162,7 @@ func (a *Aggregate[T, PT]) EventKind(in Evolver[T]) (string, error) {
 
 func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapshot[T]) (*snapshot.Aggregate[T], error) {
 	aggr := &snapshot.Aggregate[T]{
+		ID:    identity.ID(id),
 		State: PT(new(T)),
 	}
 
@@ -152,6 +187,8 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 			ev.Evolve(aggr.State)
 			aggr.Sequence = event.Sequence
 			aggr.Version++
+			aggr.Timestamp = event.Timestamp
+
 		} else {
 			return nil, fmt.Errorf("buid, event is not Evolver[T] %w", err)
 		}
@@ -223,9 +260,11 @@ func (a *Aggregate[T, PT]) Mutate(
 			snapTime = sn.Timestamp
 		}
 		aggr.Version += uint64(numevents)
+
 		notSnaphottedEventsNumber = aggr.Version - numEventsBeforeBuild
 		if notSnaphottedEventsNumber >= uint64(a.storeConfig.SnapshotMsgThreshold) && time.Since(snapTime) > a.storeConfig.SnapshotMinInterval {
 			evts.Evolve(aggr.State)
+
 			if len(storedMsgs) > 0 {
 				aggr.Sequence = storedMsgs[len(storedMsgs)-1].Sequence
 			}
