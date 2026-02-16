@@ -136,12 +136,12 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 		}
 		return nil, fmt.Errorf("save: %w", err)
 	}
-
-	outmsgs := make([]stream.MsgMetadata, len(msgs))
+	msglen := len(msgs)
+	outmsgs := make([]stream.MsgMetadata, msglen)
 	for i, msg := range msgs {
 		outmsgs[i] = stream.MsgMetadata{
 			MsgID:    msg.ID,
-			Sequence: batchAck.Sequence + uint64(i),
+			Sequence: batchAck.Sequence + uint64(msglen) - uint64(i) - 1,
 		}
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
 		s.Logger.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
