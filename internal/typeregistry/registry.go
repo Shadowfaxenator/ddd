@@ -39,22 +39,20 @@ func New(opts ...option) *registry {
 type ctor = func() any
 
 // Register registers a type, it's not thread safe
-func (r *registry) Register(tname string, c ctor) {
+func (r *registry) Register(tname string, c ctor) error {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.types[reflect.TypeOf(c())]; ok {
-		r.logger.Warn("type already registered", "kind", reflect.TypeOf(c()))
-		return
-
+		return fmt.Errorf("type %T already registered", c())
 	}
 	if _, ok := r.ctors[tname]; ok {
-		r.logger.Warn("type already registered", "kind", tname)
-		return
+		return fmt.Errorf("type %s already registered", tname)
 	}
 	r.types[reflect.TypeOf(c())] = tname
 	r.ctors[tname] = c
 	r.logger.Info("type registered", "kind", tname)
+	return nil
 }
 
 func (r *registry) Create(name string) (any, error) {
@@ -105,7 +103,7 @@ type Creator interface {
 }
 
 type CreateKinderRegistry interface {
-	Register(tname string, c func() any)
+	Register(tname string, c func() any) error
 	Creator
 	Kinder
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"reflect"
 	"time"
 
 	"github.com/alekseev-bro/ddd/internal/prettylog"
@@ -48,7 +47,7 @@ func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapshot.Store, opts ...Option[T, PT]) *Aggregate[T, PT] {
+func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapshot.Store, opts ...Option[T, PT]) (*Aggregate[T, PT], error) {
 	opt := new(storeOptions[T, PT])
 	opt.storeConfig = storeConfig{
 		SnapshotMsgThreshold: snapshot.DefaultSizeInEvents,
@@ -60,7 +59,10 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 	for _, o := range opts {
 		o(opt)
 	}
-	str := stream.New(es, opt.streamOptions...)
+	str, err := stream.New(es, opt.streamOptions...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create event stream: %w", err)
+	}
 	snap := snapshot.NewStore[T](ss, opt.snapshotOptions...)
 
 	aggr := &Aggregate[T, PT]{
@@ -73,7 +75,7 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 	aggr.startSnapshoting(ctx)
 	//	var zero T
 
-	return aggr
+	return aggr, nil
 }
 
 // Subscriber is an interface that defines the Project method for projecting events on an
@@ -275,27 +277,20 @@ func (s *subscribeHandlerAdapter[T]) HandleEvents(ctx context.Context, ev any) e
 
 }
 
-func ProjectEvent[E Evolver[T], T any](ctx context.Context, sub eventKindSubscriber[T], h EventHandler[T, E]) (stream.Drainer, error) {
+type pointerEvent[E any, T any] interface {
+	*E
+	Evolver[T]
+}
 
-	var zero any
-	t := reflect.TypeFor[E]()
-	switch t.Kind() {
-	case reflect.Struct:
-		zero = new(E)
-	case reflect.Pointer:
-		var z E
-		zero = z
-	default:
-		return nil, fmt.Errorf("unsupported event type: %s", t)
-	}
+func ProjectEvent[E any, T any, PE pointerEvent[E, T]](ctx context.Context, sub eventKindSubscriber[T], h EventHandler[T, PE]) (stream.Drainer, error) {
+	var sentinel PE
 
 	n := fmt.Sprintf("%s", typeregistry.TypeNameFrom(h))
 
-	eventKind, err := sub.EventKind(zero.(E))
-
+	eventKind, err := sub.EventKind(sentinel)
 	if err != nil {
 		return nil, fmt.Errorf("project: %w", err)
 	}
-	return sub.Subscribe(ctx, &handleEventAdapter[E, T]{h: h}, stream.WithFilterByEvent(eventKind), stream.WithName(n))
+	return sub.Subscribe(ctx, &handleEventAdapter[PE, T]{h: h}, stream.WithFilterByEvent(eventKind), stream.WithName(n))
 
 }

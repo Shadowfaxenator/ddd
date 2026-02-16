@@ -28,7 +28,7 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 		return nil, fmt.Errorf("snapshot driver: %w", err)
 	}
 
-	return aggregate.New(ctx, es, ss, cfg.agOpts...), nil
+	return aggregate.New(ctx, es, ss, cfg.agOpts...)
 }
 
 type saver interface {

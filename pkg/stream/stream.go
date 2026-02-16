@@ -39,7 +39,7 @@ type stream struct {
 	logger      logger
 }
 
-func New(sub Store, opts ...Option) *stream {
+func New(sub Store, opts ...Option) (*stream, error) {
 	reg := typeregistry.New()
 	ser := serde.NewSerder[any](reg, codec.JSON)
 	st := &stream{
@@ -49,9 +49,11 @@ func New(sub Store, opts ...Option) *stream {
 		logger:      prettylog.NewDefault(),
 	}
 	for _, opt := range opts {
-		opt(st)
+		if err := opt(st); err != nil {
+			return nil, fmt.Errorf("failed to apply option: %w", err)
+		}
 	}
-	return st
+	return st, nil
 }
 
 type EventHandler interface {
