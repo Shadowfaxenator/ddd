@@ -12,7 +12,7 @@ import (
 )
 
 type snapshotStore struct {
-	SnapshotStoreConfig
+	*snapshotStoreConfig
 	kv jetstream.KeyValue
 }
 
@@ -23,10 +23,16 @@ const (
 	Memory
 )
 
-func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg SnapshotStoreConfig) *snapshotStore {
+func NewDriver(ctx context.Context, js jetstream.JetStream, name string, options ...Option) (*snapshotStore, error) {
+	cfg := &snapshotStoreConfig{
+		StoreType: Disk,
+	}
+	for _, option := range options {
+		option(cfg)
+	}
 
 	ss := &snapshotStore{
-		SnapshotStoreConfig: cfg,
+		snapshotStoreConfig: cfg,
 	}
 
 	kv, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
@@ -34,11 +40,11 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg Sna
 		Storage: jetstream.StorageType(ss.StoreType),
 	})
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("can not create key value: %w", err)
 	}
 
 	ss.kv = kv
-	return ss
+	return ss, nil
 }
 
 func (s *snapshotStore) snapshotBucketName(name string) string {

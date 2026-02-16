@@ -2,20 +2,11 @@ package idempotency
 
 import (
 	"context"
-
-	"github.com/alekseev-bro/ddd/pkg/id"
 )
 
-var Key idempotanceKey = "idempKey"
+var Key idempotenceKey = "idempKey"
 
-type idempotanceKey string
-
-func KeyFromCtxOrRandom(ctx context.Context) int64 {
-	if val, ok := ctx.Value(Key).(int64); ok {
-		return val
-	}
-	return id.New()
-}
+type idempotenceKey string
 
 func ContextWithKey(ctx context.Context, key int64) context.Context {
 	return context.WithValue(ctx, Key, key)

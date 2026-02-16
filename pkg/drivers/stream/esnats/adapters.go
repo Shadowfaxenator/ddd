@@ -2,7 +2,6 @@ package esnats
 
 import (
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +22,11 @@ type natsMessage interface {
 	Subject() string
 	Seq() uint64
 	Timestamp() time.Time
+}
+
+type ackNaker interface {
+	Nak() error
+	Ack() error
 }
 
 type jsRawMsgAdapter struct {
@@ -49,76 +53,113 @@ func (j jsRawMsgAdapter) Seq() uint64 {
 	return j.RawStreamMsg.Sequence
 }
 
+func newNatsMessageAdapter(msg *nats.Msg) (natsMessageAdapter, error) {
+	mt, err := msg.Metadata()
+	if err != nil {
+		return natsMessageAdapter{}, fmt.Errorf("metadata: %w", err)
+	}
+	return natsMessageAdapter{
+		msg: msg,
+		mt:  mt,
+	}, nil
+}
+
 type natsMessageAdapter struct {
-	*nats.Msg
+	msg *nats.Msg
+	mt  *nats.MsgMetadata
+}
+
+func (n natsMessageAdapter) Ack() error {
+	return n.msg.Ack()
+}
+
+func (n natsMessageAdapter) Nak() error {
+	return n.msg.Nak()
 }
 
 func (n natsMessageAdapter) Headers() nats.Header {
-	return n.Msg.Header
+	return n.msg.Header
 }
 
-// TODO: check panic for NATS core
 func (n natsMessageAdapter) Timestamp() time.Time {
-	mt, err := n.Msg.Metadata()
-	if err != nil {
-		slog.Error("failed to get metadata", "error", err)
-		panic("failed to get metadata")
-	}
-	return mt.Timestamp
+	return n.mt.Timestamp
 }
 
 func (n natsMessageAdapter) Data() []byte {
-	return n.Msg.Data
+	return n.msg.Data
 }
 
 func (n natsMessageAdapter) Subject() string {
 
-	return n.Msg.Subject
+	return n.msg.Subject
 }
 
-// TODO: check panic for NATS core
 func (n natsMessageAdapter) Seq() uint64 {
-	mt, err := n.Msg.Metadata()
+
+	return n.mt.Sequence.Stream
+}
+
+func newNatsJSMsgAdapter(msg jetstream.Msg) (natsJSMsgAdapter, error) {
+	mt, err := msg.Metadata()
 	if err != nil {
-		slog.Error("failed to get metadata", "error", err)
-		panic("failed to get metadata")
+		return natsJSMsgAdapter{}, fmt.Errorf("metadata: %w", err)
 	}
-	return mt.Sequence.Stream
+
+	return natsJSMsgAdapter{
+		msg: msg,
+		mt:  mt,
+	}, nil
 }
 
 type natsJSMsgAdapter struct {
-	jetstream.Msg
+	msg jetstream.Msg
+	mt  *jetstream.MsgMetadata
+}
+
+func (n natsJSMsgAdapter) Ack() error {
+	return n.msg.Ack()
+}
+
+func (n natsJSMsgAdapter) Nak() error {
+	return n.msg.Nak()
 }
 
 func (n natsJSMsgAdapter) Timestamp() time.Time {
-	mt, err := n.Msg.Metadata()
-	if err != nil {
-		slog.Error("failed to get metadata", "error", err)
-		panic("failed to get metadata")
-	}
-	return mt.Timestamp
+
+	return n.mt.Timestamp
 }
 
 func (n natsJSMsgAdapter) Seq() uint64 {
-	mt, err := n.Msg.Metadata()
-	if err != nil {
-		slog.Error("failed to get metadata", "error", err)
-		panic("failed to get metadata")
-	}
-	return mt.Sequence.Stream
+
+	return n.mt.Sequence.Stream
 }
 
-func streamMsgFromNatsMsg(msg natsMessage) *stream.StoredMsg {
+func (n natsJSMsgAdapter) Data() []byte {
+	return n.msg.Data()
+}
+
+func (n natsJSMsgAdapter) Subject() string {
+
+	return n.msg.Subject()
+}
+
+func (n natsJSMsgAdapter) Headers() nats.Header {
+	return n.msg.Headers()
+}
+
+func streamMsgFromNatsMsg(msg natsMessage) (*stream.StoredMsg, error) {
 
 	subjectParts := strings.Split(msg.Subject(), ".")
+	if len(subjectParts) < 3 {
+		return nil, fmt.Errorf("invalid subject format")
+	}
 	kind := subjectParts[2]
 
 	//	ev := typereg.GetType(kind, msg.Data())
 
 	id, err := strconv.ParseInt(msg.Headers().Get(eventIDHeader), 10, 64)
 	if err != nil {
-		slog.Error("failed to parse event ID", "error", err)
-		panic("failed to parse event ID")
+		return nil, fmt.Errorf("failed to parse event ID: %w", err)
 	}
 
 	return &stream.StoredMsg{
@@ -127,5 +168,5 @@ func streamMsgFromNatsMsg(msg natsMessage) *stream.StoredMsg {
 		Body:      msg.Data(),
 		Sequence:  msg.Seq(),
 		Timestamp: msg.Timestamp(),
-	}
+	}, nil
 }

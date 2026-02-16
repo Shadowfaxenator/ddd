@@ -1,4 +1,4 @@
-package id
+package identity
 
 import (
 	"strconv"
@@ -21,17 +21,19 @@ func init() {
 	}
 }
 
-func New() int64 {
+func New() (ID, error) {
 
 	id, err := sf.NextID()
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
-	return id
+	return ID(id), nil
 }
-
+func (i ID) Int64() int64 {
+	return int64(i)
+}
 func MustParseIDFromString(s string) ID {
-	id, err := strconv.Atoi(s)
+	id, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		panic(err)
 	}
@@ -40,7 +42,8 @@ func MustParseIDFromString(s string) ID {
 
 type ID int64
 
+
 func (i ID) String() string {
 
-	return strconv.Itoa(int(i))
+	return strconv.FormatInt(int64(i), 10)
 }

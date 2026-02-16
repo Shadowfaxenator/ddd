@@ -1,14 +1,13 @@
 package snapnats
 
-type SnapshotStoreConfig struct {
+type snapshotStoreConfig struct {
 	StoreType StoreType
 }
 
-// type Option func(*SnapshotStoreConfig)
+type Option func(*snapshotStoreConfig)
 
-// func WithInMemory() Option {
-// 	return func(ss *SnapshotStoreConfig) {
-// 		ss.StoreType = Memory
-
-// 	}
-// }
+func WithStoreType(storeType StoreType) Option {
+	return func(ss *snapshotStoreConfig) {
+		ss.StoreType = storeType
+	}
+}

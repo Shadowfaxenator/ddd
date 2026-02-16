@@ -11,11 +11,18 @@ import (
 	"github.com/alekseev-bro/ddd/internal/serde"
 	"github.com/alekseev-bro/ddd/internal/typereg"
 
-	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/codec"
+	"github.com/alekseev-bro/ddd/pkg/identity"
 
 	"github.com/alekseev-bro/ddd/pkg/idempotency"
 )
+
+var ErrNonRetriable = errors.New("non-retriable error")
+
+type Logger interface {
+	Info(msg string, args ...any)
+	Error(msg string, args ...any)
+}
 
 type Publisher interface {
 	Publish(ctx context.Context, subject string, data []byte) error
@@ -38,6 +45,7 @@ type stream struct {
 	store Driver
 	typereg.TypeRegistry
 	eventSerder eventSerder
+	logger      Logger
 }
 
 func New(ctx context.Context, sub Driver, opts ...Option) *stream {
@@ -47,6 +55,7 @@ func New(ctx context.Context, sub Driver, opts ...Option) *stream {
 		store:        sub,
 		TypeRegistry: reg,
 		eventSerder:  ser,
+		logger:       slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(st)
@@ -81,14 +90,14 @@ type StoredMsg struct {
 }
 
 type Event struct {
-	ID        aggregate.EventID
+	ID        identity.ID
 	Body      any
 	Kind      string
 	Sequence  uint64
 	Timestamp time.Time
 }
 
-func (s *stream) Save(ctx context.Context, aggrID aggregate.ID, expectedSequence uint64, events []any) ([]MsgMetadata, error) {
+func (s *stream) Save(ctx context.Context, aggrID identity.ID, expectedSequence uint64, events []any) ([]MsgMetadata, error) {
 
 	var msgs []Msg
 	for _, ev := range events {
@@ -100,8 +109,11 @@ func (s *stream) Save(ctx context.Context, aggrID aggregate.ID, expectedSequence
 		if err != nil {
 			return nil, fmt.Errorf("update: %w", err)
 		}
-
-		msgs = append(msgs, Msg{ID: int64(aggregate.NewEventID()), Body: b, Kind: kind})
+		evid, err := identity.New()
+		if err != nil {
+			return nil, fmt.Errorf("generate event ID: %w", err)
+		}
+		msgs = append(msgs, Msg{ID: evid.Int64(), Body: b, Kind: kind})
 	}
 	var idemp int64
 	if i, ok := idempotency.KeyFromContext(ctx); ok {
@@ -115,11 +127,11 @@ func (s *stream) Save(ctx context.Context, aggrID aggregate.ID, expectedSequence
 	return smsgs, nil
 }
 
-func (s *stream) Load(ctx context.Context, id aggregate.ID, seq uint64) iter.Seq2[*Event, error] {
+func (s *stream) Load(ctx context.Context, id identity.ID, seq uint64) iter.Seq2[*Event, error] {
 	var errStop = errors.New("load iterator stopped")
 	return func(yield func(*Event, error) bool) {
 
-		if err := s.store.Load(ctx, int64(id), seq, func(sm *StoredMsg) error {
+		if err := s.store.Load(ctx, id.Int64(), seq, func(sm *StoredMsg) error {
 
 			ev, err := s.eventSerder.Deserialize(sm.Kind, sm.Body)
 			if err != nil {
@@ -129,7 +141,7 @@ func (s *stream) Load(ctx context.Context, id aggregate.ID, seq uint64) iter.Seq
 				return nil
 			}
 			e := &Event{
-				ID:        aggregate.EventID(sm.ID),
+				ID:        identity.ID(sm.ID),
 				Body:      ev,
 				Kind:      sm.Kind,
 				Sequence:  sm.Sequence,
@@ -165,15 +177,16 @@ func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOpti
 	}
 
 	d, err := a.store.Subscribe(ctx, func(msg *StoredMsg) error {
-		// TODO: implement panic recovery
+
 		ev, err := a.eventSerder.Deserialize(msg.Kind, msg.Body)
 		if err != nil {
-			panic(err)
+			a.logger.Error("can't deserialize event", "kind", msg.Kind)
+			return ErrNonRetriable
 		}
 		return h.HandleEvents(idempotency.ContextWithKey(ctx, msg.ID), ev)
 	}, params)
 	if err == nil {
-		slog.Info("subscription created", "subscription", params.DurableName)
+		a.logger.Info("subscription created", "subscription", params.DurableName)
 	}
 	return d, nil
 }

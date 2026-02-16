@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
-	"github.com/alekseev-bro/ddd/pkg/eventstore"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/stream"
 
@@ -34,7 +33,7 @@ const (
 
 type eventStreamDriver struct {
 	name string
-	EventStreamConfig
+	*eventStreamConfig
 	// TODO: impl partitioning
 	js jetstream.JetStream
 }
@@ -43,11 +42,17 @@ const (
 	defaultDeduplication time.Duration = time.Minute * 2
 )
 
-func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg EventStreamConfig) *eventStreamDriver {
-	if cfg.Deduplication == 0 {
-		cfg.Deduplication = defaultDeduplication
+func NewDriver(ctx context.Context, js jetstream.JetStream, name string, opts ...Option) (*eventStreamDriver, error) {
+	cfg := &eventStreamConfig{
+		StoreType:     Disk,
+		Deduplication: defaultDeduplication,
+		Logger:        slog.Default(),
 	}
-	stream := &eventStreamDriver{name: name, js: js, EventStreamConfig: cfg}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	stream := &eventStreamDriver{name: name, js: js, eventStreamConfig: cfg}
 
 	_, err := stream.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Subjects:           []string{stream.allSubjects()},
@@ -59,10 +64,10 @@ func NewDriver(ctx context.Context, js jetstream.JetStream, name string, cfg Eve
 	})
 
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("nats stream create: %w", err)
 	}
 
-	return stream
+	return stream, nil
 }
 
 func (s *eventStreamDriver) subjectNameForID(agrid string) string {
@@ -76,7 +81,7 @@ func (s *eventStreamDriver) allSubjects() string {
 	return fmt.Sprintf("%s.>", s.name)
 }
 
-func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotancyKey int64) ([]stream.MsgMetadata, error) {
+func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotencyKey int64) ([]stream.MsgMetadata, error) {
 	strAggrID := strconv.FormatInt(aggrID, 10)
 	if msgs == nil {
 		return nil, nil
@@ -87,8 +92,8 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
 		nmsg := nats.NewMsg(sub)
 
-		if idempotancyKey != 0 && i == 0 {
-			nmsg.Header.Add(jetstream.MsgIDHeader, strconv.FormatInt(idempotancyKey, 10))
+		if idempotencyKey != 0 && i == 0 {
+			nmsg.Header.Add(jetstream.MsgIDHeader, strconv.FormatInt(idempotencyKey, 10))
 		}
 		nmsg.Data = msg.Body
 		nmsg.Header.Add(eventIDHeader, strconv.FormatInt(msg.ID, 10))
@@ -103,17 +108,17 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 		if err != nil {
 			var seqerr *jetstream.APIError
 			if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
-				slog.Warn("occ", "version", expectedSequence, "name", s.subjectNameForID(strAggrID))
+				s.Logger.Warn("occ", "version", expectedSequence, "name", s.subjectNameForID(strAggrID))
 			}
 			return nil, fmt.Errorf("store event func: %w", err)
 		}
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msgs[0].Kind)
 		if ack.Duplicate {
-			slog.Warn("duplicate event not stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
+			s.Logger.Warn("duplicate event not stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
 			return nil, nil
 		}
 
-		slog.Info("event stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
+		s.Logger.Info("event stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
 		msgs := []stream.MsgMetadata{
 			{
 				MsgID:    msgs[0].ID,
@@ -127,18 +132,19 @@ func (s *eventStreamDriver) Save(ctx context.Context, aggrID int64, expectedSequ
 	if err != nil {
 		var seqerr *jetstream.APIError
 		if errors.As(err, &seqerr); seqerr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence {
-			slog.Warn("occ", "name", s.subjectNameForID(strAggrID))
+			s.Logger.Warn("occ", "name", s.subjectNameForID(strAggrID))
 		}
 		return nil, fmt.Errorf("save: %w", err)
 	}
+
 	outmsgs := make([]stream.MsgMetadata, len(msgs))
 	for i, msg := range msgs {
 		outmsgs[i] = stream.MsgMetadata{
 			MsgID:    msg.ID,
-			Sequence: batchAck.Sequence,
+			Sequence: batchAck.Sequence + uint64(i),
 		}
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
-		slog.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
+		s.Logger.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
 	}
 
 	return outmsgs, nil
@@ -161,12 +167,15 @@ func (s *eventStreamDriver) Load(ctx context.Context, aggrID int64, fromSeq uint
 		if err != nil {
 			if errors.Is(err, jetstreamext.ErrNoMessages) {
 
-				return eventstore.ErrNoAggregate
+				return aggregate.ErrNotExists
 			}
 			return fmt.Errorf("build func can't get msg batch: %w", err)
 		}
-
-		if err := handler(streamMsgFromNatsMsg(jsRawMsgAdapter{msg})); err != nil {
+		sm, err := streamMsgFromNatsMsg(jsRawMsgAdapter{msg})
+		if err != nil {
+			return fmt.Errorf("load failed: %w", err)
+		}
+		if err := handler(sm); err != nil {
 			return err
 		}
 
@@ -203,6 +212,27 @@ func aggrIDFromParams(params *stream.SubscribeParams) string {
 	return "*"
 }
 
+func (e *eventStreamDriver) processMessage(m natsMessage, a ackNaker, handler func(msg *stream.StoredMsg) error) {
+	var target *aggregate.InvariantViolationError
+	sm, err := streamMsgFromNatsMsg(m)
+	if err != nil {
+		e.Logger.Error("load failed", "error", err)
+		return
+	}
+	if err := handler(sm); err != nil {
+		if !errors.As(err, &target) && !errors.Is(err, stream.ErrNonRetriable) {
+			e.Logger.Warn("redelivering...", "error", err)
+			a.Nak()
+			return
+		} else {
+			if target != nil {
+				e.Logger.Warn("invariant violation", "reason", target.Err.Error())
+			}
+		}
+	}
+	a.Ack()
+}
+
 func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *stream.StoredMsg) error, params *stream.SubscribeParams) (stream.Drainer, error) {
 
 	maxpend := maxAckPending
@@ -223,19 +253,12 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 		subs := make(drainList, len(filter))
 		for i, f := range filter {
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
-
-				var target *aggregate.InvariantViolationError
-				if err := handler(streamMsgFromNatsMsg(natsMessageAdapter{msg})); err != nil {
-					if !errors.As(err, &target) {
-						slog.Warn("redelivering", "error", err)
-						msg.Nak()
-						return
-					} else {
-						slog.Warn("invariant violation", "reason", err.Error())
-					}
+				adapt, err := newNatsMessageAdapter(msg)
+				if err != nil {
+					e.Logger.Error("failed to create message adapter", "error", err)
+					return
 				}
-				msg.Ack()
-
+				e.processMessage(adapt, adapt, handler)
 			})
 			if err != nil {
 				return nil, fmt.Errorf("at most once subscribe: %w", err)
@@ -257,37 +280,23 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 		//PinnedTTL:      time.Second * 10,
 	})
 	if err != nil {
-		slog.Error("subscription create consumer", "error", err)
-		panic(err)
+		return nil, fmt.Errorf("subscription create consumer: %w", err)
 	}
 
 	ct, err := cons.Consume(func(msg jetstream.Msg) {
-		// mt, err := msg.Metadata()
-		// if err != nil {
-		// 	slog.Error("subscription metadata", "error", err)
-		// 	slog.Warn("redelivering")
-		// 	msg.Nak()
-		// 	return
-		// }
-
-		var target *aggregate.InvariantViolationError
-		if err := handler(streamMsgFromNatsMsg(natsJSMsgAdapter{msg})); err != nil {
-			if !errors.As(err, &target) {
-				slog.Warn("redelivering", "error", err)
-				msg.Nak()
-				return
-			} else {
-				slog.Warn("invariant violation", "reason", err.Error())
-			}
+		adapt, err := newNatsJSMsgAdapter(msg)
+		if err != nil {
+			e.Logger.Error("failed to create message adapter", "error", err)
+			return
 		}
-		msg.Ack()
+		e.processMessage(adapt, adapt, handler)
 
 	}, jetstream.ConsumeErrHandler(func(consumeCtx jetstream.ConsumeContext, err error) {
-		slog.Error("subscription consume", "error", err)
+		e.Logger.Error("subscription consume", "error", err)
 	}),
 	)
 	if err != nil {
-		panic(fmt.Errorf("subscription consume: %w", err))
+		return nil, fmt.Errorf("subscription consume: %w", err)
 	}
 
 	return drainList{&drainAdapter{ConsumeContext: ct}}, nil

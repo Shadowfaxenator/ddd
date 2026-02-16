@@ -7,9 +7,20 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/codec"
+	"github.com/alekseev-bro/ddd/pkg/identity"
 )
+
+type Logger interface {
+	Error(msg string, args ...any)
+}
+type Aggregate[T any] struct {
+	ID        identity.ID
+	Sequence  uint64
+	Timestamp time.Time
+	Version   uint64
+	State     *T
+}
 
 type Value struct {
 	Body      []byte
@@ -17,19 +28,21 @@ type Value struct {
 }
 
 type Snapshot[T any] struct {
-	Body      *aggregate.Aggregate[T]
+	Body      *Aggregate[T]
 	Timestamp time.Time
 }
 
 type store[T any] struct {
-	codec codec.Codec
-	ss    Driver
+	codec  codec.Codec
+	ss     Driver
+	logger Logger
 }
 
 func NewStore[T any](ss Driver, opts ...Option[T]) *store[T] {
 	s := &store[T]{
-		codec: codec.JSON,
-		ss:    ss,
+		codec:  codec.JSON,
+		ss:     ss,
+		logger: slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -37,31 +50,31 @@ func NewStore[T any](ss Driver, opts ...Option[T]) *store[T] {
 	return s
 }
 
-func (s *store[T]) Save(ctx context.Context, a *aggregate.Aggregate[T]) error {
+func (s *store[T]) Save(ctx context.Context, a *Aggregate[T]) error {
 
 	b, err := s.codec.Marshal(a)
 	if err != nil {
 		return fmt.Errorf("snapshot save: %w", err)
 	}
-	return s.ss.Save(ctx, a.ID.I64(), b)
+	return s.ss.Save(ctx, a.ID.Int64(), b)
 }
-func (s *store[T]) Load(ctx context.Context, id aggregate.ID) (*Snapshot[T], bool) {
+func (s *store[T]) Load(ctx context.Context, id identity.ID) (*Snapshot[T], bool) {
 
-	snap, err := s.ss.Load(ctx, id.I64())
+	snap, err := s.ss.Load(ctx, id.Int64())
 	if err != nil {
 		if errors.Is(err, ErrNoSnapshot) {
 			return nil, false
 		}
-		slog.Error("snapshot load", "error", err)
+		s.logger.Error("snapshot load", "error", err)
 		return nil, false
 	}
 	snapshot := &Snapshot[T]{
-		Body:      new(aggregate.Aggregate[T]),
+		Body:      new(Aggregate[T]),
 		Timestamp: snap.Timestamp,
 	}
 
 	if err := s.codec.Unmarshal(snap.Body, snapshot.Body); err != nil {
-		slog.Error("snapshot load", "error", err)
+		s.logger.Error("snapshot load", "error", err)
 		return nil, false
 	}
 
