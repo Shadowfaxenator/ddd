@@ -37,6 +37,7 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 		SnapshotMinInterval:  snapshot.DefaultMinInterval,
 		SnapshotTimeout:      snapshot.DefaultTimeout,
 		Logger:               slog.Default(),
+		SnapshotMaxTasks:     255,
 	}
 	for _, o := range opts {
 		o(opt)
@@ -48,9 +49,22 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 		storeConfig: opt.storeConfig,
 		es:          str,
 		ss:          snap,
+		snapChan:    make(chan *snapshot.Aggregate[T], opt.SnapshotMaxTasks),
 		eventTypes:  str,
 	}
 
+	go func() {
+		for a := range aggr.snapChan {
+			ctxSnap, cancel := context.WithTimeout(context.Background(), aggr.storeConfig.SnapshotTimeout)
+			defer cancel()
+			if err := aggr.ss.Save(ctxSnap, a); err != nil {
+				aggr.logger().Error("snapshot save", "error", err.Error())
+			}
+
+			aggr.logger().Info("snapshot saved", "kind", reflect.TypeFor[T]().Name(), "sequence", a.Sequence, "aggregateID", a.ID.String(), "timestamp", a.Timestamp)
+
+		}
+	}()
 	//	var zero T
 
 	return aggr
@@ -105,6 +119,7 @@ type Aggregate[T any, PT StatePtr[T]] struct {
 	ss          snapshotStore[T]
 	eventTypes  eventKinder
 	codec       codec.Codec
+	snapChan    chan *snapshot.Aggregate[T]
 }
 
 func (a *Aggregate[T, PT]) EventKind(in Evolver[T]) (string, error) {
@@ -215,17 +230,12 @@ func (a *Aggregate[T, PT]) Mutate(
 				aggr.Sequence = storedMsgs[len(storedMsgs)-1].Sequence
 			}
 
-			go func() {
-				ctxSnap, cancel := context.WithTimeout(context.Background(), a.storeConfig.SnapshotTimeout)
-				defer cancel()
-				if err := a.ss.Save(ctxSnap, aggr); err != nil {
-					a.logger().Error("snapshot save", "error", err.Error())
-					return
-				}
+			select {
+			case a.snapChan <- aggr:
 
-				a.logger().Info("snapshot saved", "sequence", aggr.Sequence, "aggregateID", id.String(), "aggregate", reflect.TypeFor[T]().Name(), "timestamp", aggr.Timestamp)
-
-			}()
+			default:
+				a.logger().Error("snapshot save", "error", "snapshot queue is full")
+			}
 
 		}
 	}

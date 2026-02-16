@@ -40,6 +40,12 @@ func WithInMemory[T any, PT aggregate.StatePtr[T]]() option[T, PT] {
 	}
 }
 
+func WithSnapshotMaxTasks[T any, PT aggregate.StatePtr[T]](maxTasks byte) option[T, PT] {
+	return func(opts *options[T, PT]) {
+		opts.agOpts = append(opts.agOpts, aggregate.WithSnapshotMaxTasks[T, PT](maxTasks))
+	}
+}
+
 func WithDeduplication[T any, PT aggregate.StatePtr[T]](duration time.Duration) option[T, PT] {
 	return func(opts *options[T, PT]) {
 		opts.esCfg = append(opts.esCfg, esnats.WithDeduplication(duration))

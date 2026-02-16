@@ -18,6 +18,7 @@ type storeConfig struct {
 	SnapshotMsgThreshold uint16
 	SnapshotMinInterval  time.Duration
 	SnapshotTimeout      time.Duration
+	SnapshotMaxTasks     byte
 	Logger               logger
 }
 
@@ -70,15 +71,6 @@ func WithSnapshotEventCount[T any, PT StatePtr[T]](count uint16) Option[T, PT] {
 	}
 }
 
-func WithSnapshotMsgThreshold[T any, PT StatePtr[T]](threshold uint16) Option[T, PT] {
-	return func(a *storeOptions[T, PT]) {
-		if threshold > 10000 || threshold < 1 {
-			return
-		}
-		a.storeConfig.SnapshotMsgThreshold = threshold
-	}
-}
-
 func WithCodec[T any, PT StatePtr[T]](codec codec.Codec) Option[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.snapshotOptions = append(a.snapshotOptions, snapshot.WithCodec[T](codec))
@@ -89,5 +81,11 @@ func WithCodec[T any, PT StatePtr[T]](codec codec.Codec) Option[T, PT] {
 func WithLogger[T any, PT StatePtr[T]](logger logger) Option[T, PT] {
 	return func(a *storeOptions[T, PT]) {
 		a.storeConfig.Logger = logger
+	}
+}
+
+func WithSnapshotMaxTasks[T any, PT StatePtr[T]](maxTasks byte) Option[T, PT] {
+	return func(a *storeOptions[T, PT]) {
+		a.storeConfig.SnapshotMaxTasks = maxTasks
 	}
 }

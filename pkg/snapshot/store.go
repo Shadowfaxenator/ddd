@@ -21,12 +21,6 @@ const (
 	UpperTimeout        time.Duration = time.Second * 10
 )
 
-type Rules struct {
-	SizeInEvents uint16
-	MinInterval  time.Duration
-	Timeout      time.Duration
-}
-
 type logger interface {
 	Error(msg string, args ...any)
 }
