@@ -134,6 +134,7 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 				if sn == nil {
 					return nil, nil
 				}
+				return sn.Body, nil
 			} else {
 				return nil, fmt.Errorf("buid %w", err)
 			}
