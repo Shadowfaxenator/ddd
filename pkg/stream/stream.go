@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log/slog"
 	"reflect"
 	"time"
 
@@ -174,6 +175,32 @@ func (s *stream) LoadEvents(ctx context.Context, id identity.ID, seq uint64) ite
 
 type Drainer interface {
 	Drain() error
+}
+
+type DrainList []Drainer
+
+func (d DrainList) Drain() error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	for _, drainer := range d {
+		go func(ctx context.Context, drainer Drainer) {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				if err := drainer.Drain(); err != nil {
+					slog.Error("drain", "error", err)
+				}
+			}
+
+		}(ctx, drainer)
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
 }
 
 // Subscribe creates a new subscription on aggegate events with the given handler.

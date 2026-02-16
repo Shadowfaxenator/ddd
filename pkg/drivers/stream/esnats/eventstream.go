@@ -189,19 +189,19 @@ type drainAdapter struct {
 }
 
 func (d *drainAdapter) Drain() error {
-	d.ConsumeContext.Drain()
-	return nil
-}
-
-type drainList []stream.Drainer
-
-func (d drainList) Drain() error {
-	for _, drainer := range d {
-		if err := drainer.Drain(); err != nil {
-			return err
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		d.ConsumeContext.Drain()
+		done <- nil
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
 	}
-	return nil
 }
 
 func aggrIDFromParams(params *stream.SubscribeParams) string {
@@ -248,7 +248,7 @@ func (e *eventStore) Subscribe(ctx context.Context, handler func(msg *stream.Sto
 		filter = append(filter, fmt.Sprintf("%s.%s.%s", e.name, aggrIDFromParams(params), "*"))
 	}
 	if params.QoS.Delivery == qos.AtMostOnce {
-		subs := make(drainList, len(filter))
+		subs := make(stream.DrainList, len(filter))
 		for i, f := range filter {
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
 				adapt := newNatsMessageAdapter(msg)
@@ -293,6 +293,6 @@ func (e *eventStore) Subscribe(ctx context.Context, handler func(msg *stream.Sto
 		return nil, fmt.Errorf("subscription consume: %w", err)
 	}
 
-	return drainList{&drainAdapter{ConsumeContext: ct}}, nil
+	return stream.DrainList{&drainAdapter{ConsumeContext: ct}}, nil
 
 }
