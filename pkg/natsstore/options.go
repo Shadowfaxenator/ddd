@@ -40,15 +40,6 @@ func WithDeduplication[T any, PT eventstore.PRoot[T]](duration time.Duration) op
 	}
 }
 
-// WithSnapshotThreshold sets the threshold for snapshotting.
-// numMsgs is the number of messages to accumulate before snapshotting,
-// and the interval is the minimum time interval between snapshots.
-func WithSnapshotThreshold[T any, PT eventstore.PRoot[T]](numMsgs byte, maxInterval time.Duration) option[T, PT] {
-	return func(o *options[T, PT]) {
-		o.agOpts = append(o.agOpts, eventstore.WithSnapshot[T, PT](numMsgs, maxInterval))
-	}
-}
-
 func WithEvent[E any, T any, PE interface {
 	*E
 	aggregate.Evolver[T]
@@ -58,9 +49,9 @@ func WithEvent[E any, T any, PE interface {
 	}
 }
 
-func WithSnapshot[T any, PT eventstore.PRoot[T]](maxMsgs byte, maxInterval time.Duration) option[T, PT] {
+func WithSnapshot[T any, PT eventstore.PRoot[T]](maxMsgs byte, maxInterval time.Duration, timeout time.Duration) option[T, PT] {
 	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, eventstore.WithSnapshot[T, PT](maxMsgs, maxInterval))
+		a.agOpts = append(a.agOpts, eventstore.WithSnapshot[T, PT](maxMsgs, maxInterval, timeout))
 	}
 }
 
