@@ -6,7 +6,6 @@ import (
 
 	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
-	eventstore1 "github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/drivers/snapshot/snapnats"
 	"github.com/alekseev-bro/ddd/pkg/drivers/stream/esnats"
 	"github.com/alekseev-bro/ddd/pkg/stream"
@@ -38,7 +37,7 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 }
 
 type saver interface {
-	Save(ctx context.Context, aggrID eventstore1.ID, expectedSequence uint64, events []any) ([]stream.EventMetadata, error)
+	Save(ctx context.Context, aggrID aggregate.ID, expectedSequence uint64, events []any) ([]stream.EventMetadata, error)
 }
 
 type subscriber interface {
