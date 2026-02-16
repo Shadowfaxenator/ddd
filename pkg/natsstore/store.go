@@ -3,7 +3,6 @@ package natsstore
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/alekseev-bro/ddd/internal/typereg"
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
@@ -20,9 +19,7 @@ type Store[T any, PT eventstore.PtrAggr[T]] struct {
 }
 
 func New[T any, PT eventstore.PtrAggr[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) (*eventstore.Store[T, PT], error) {
-	if reflect.TypeFor[T]().Kind() != reflect.Struct {
-		panic("type T is not a struct")
-	}
+
 	cfg := &options[T, PT]{}
 	for _, opt := range opts {
 		opt(cfg)
