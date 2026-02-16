@@ -32,7 +32,7 @@ type StatePtr[T any] interface {
 
 type snapshotStore[T any] interface {
 	Save(ctx context.Context, a *snapshot.Aggregate[T]) error
-	Load(ctx context.Context, id identity.ID) (*snapshot.Snapshot[T], bool)
+	Load(ctx context.Context, id identity.ID) *snapshot.Snapshot[T]
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
@@ -173,8 +173,8 @@ func (a *Aggregate[T, PT]) Mutate(
 		notSnaphottedEventsNumber uint64
 		numEventsBeforeBuild      uint64
 	)
-	sn, hasSnapshot := a.ss.Load(ctx, identity.ID(id))
-	if hasSnapshot {
+	sn := a.ss.Load(ctx, identity.ID(id))
+	if sn != nil {
 		numEventsBeforeBuild = sn.Body.Version
 	}
 	aggr, err = a.build(ctx, id, sn)
@@ -210,7 +210,7 @@ func (a *Aggregate[T, PT]) Mutate(
 	// Save snapshot if aggregate has more than snapshotThreshold messages
 	if aggr != nil {
 		var snapTime time.Time
-		if hasSnapshot {
+		if sn != nil {
 			snapTime = sn.Timestamp
 		}
 		aggr.Version += uint64(numevents)

@@ -58,15 +58,15 @@ func (s *store[T]) Save(ctx context.Context, a *Aggregate[T]) error {
 	}
 	return s.ss.Save(ctx, a.ID.Int64(), b)
 }
-func (s *store[T]) Load(ctx context.Context, id identity.ID) (*Snapshot[T], bool) {
+func (s *store[T]) Load(ctx context.Context, id identity.ID) *Snapshot[T] {
 
 	snap, err := s.ss.Load(ctx, id.Int64())
 	if err != nil {
 		if errors.Is(err, ErrNoSnapshot) {
-			return nil, false
+			return nil
 		}
 		s.logger.Error("snapshot load", "error", err)
-		return nil, false
+		return nil
 	}
 	snapshot := &Snapshot[T]{
 		Body:      new(Aggregate[T]),
@@ -75,10 +75,10 @@ func (s *store[T]) Load(ctx context.Context, id identity.ID) (*Snapshot[T], bool
 
 	if err := s.codec.Unmarshal(snap.Body, snapshot.Body); err != nil {
 		s.logger.Error("snapshot load", "error", err)
-		return nil, false
+		return nil
 	}
 
-	return snapshot, true
+	return snapshot
 }
 
 type Store interface {
