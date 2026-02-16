@@ -35,11 +35,13 @@ func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
 					return
 				}
 				ctxSnap, cancel := context.WithTimeout(ctx, ag.storeConfig.SnapshotTimeout)
-				defer cancel()
+
 				if err := ag.ss.Save(ctxSnap, a); err != nil {
 					ag.logger().Error("snapshot save", "error", err.Error())
+					cancel()
 					continue
 				}
+				cancel()
 				ag.logger().Info("snapshot saved", "id", a.ID.String(), "version", a.Version, "sequence", a.Sequence)
 			}
 		}
@@ -57,7 +59,10 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 		SnapshotMaxTasks:     255,
 	}
 	for _, o := range opts {
-		o(opt)
+		if err := o(opt); err != nil {
+			return nil, fmt.Errorf("failed to apply option: %w", err)
+		}
+
 	}
 	str, err := stream.New(es, opt.streamOptions...)
 	if err != nil {
