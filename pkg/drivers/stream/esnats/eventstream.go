@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
-	eventstore1 "github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/stream"
 
@@ -214,7 +213,7 @@ func aggrIDFromParams(params *stream.SubscribeParams) string {
 }
 
 func (e *eventStreamDriver) processMessage(m natsMessage, a ackNaker, handler func(msg *stream.StoredMsg) error) {
-	var target *eventstore1.InvariantViolationError
+	var target *aggregate.InvariantViolationError
 	sm, err := streamMsgFromNatsMsg(m)
 	if err != nil {
 		e.Logger.Error("load failed", "error", err)
