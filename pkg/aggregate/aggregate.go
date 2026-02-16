@@ -272,7 +272,7 @@ func ProjectEvent[E Evolver[T], T any](ctx context.Context, sub eventKindSubscri
 		var z E
 		zero = z
 	default:
-		panic(fmt.Sprintf("unsupported event type: %s", t))
+		return nil, fmt.Errorf("unsupported event type: %s", t)
 	}
 
 	n := fmt.Sprintf("%s", typeregistry.TypeNameFrom(h))

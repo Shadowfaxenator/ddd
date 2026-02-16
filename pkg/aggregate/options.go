@@ -1,8 +1,6 @@
 package aggregate
 
 import (
-	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/alekseev-bro/ddd/pkg/codec"
@@ -39,9 +37,6 @@ func WithEvent[E any, T any, PE interface {
 	Evolver[T]
 }, PT StatePtr[T]](name string) Option[T, PT] {
 
-	if reflect.TypeFor[E]().Kind() != reflect.Struct {
-		panic(fmt.Sprintf("event '%s' must be a struct and not a pointer", name))
-	}
 	return func(a *storeOptions[T, PT]) {
 
 		a.streamOptions = append(a.streamOptions, stream.WithEvent[E](name))

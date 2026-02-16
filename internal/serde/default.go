@@ -16,7 +16,7 @@ type Serder[T any] interface {
 func NewSerder[T any](reg typeregistry.Creator, c codec.Codec) *serder[T] {
 	t := reflect.TypeFor[T]()
 	if t.Kind() != reflect.Interface {
-		panic("type T is not an interface")
+		panic("type T must be an interface")
 	}
 
 	return &serder[T]{

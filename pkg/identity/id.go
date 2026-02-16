@@ -42,7 +42,6 @@ func MustParseIDFromString(s string) ID {
 
 type ID int64
 
-
 func (i ID) String() string {
 
 	return strconv.FormatInt(int64(i), 10)
