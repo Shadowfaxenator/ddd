@@ -61,7 +61,7 @@ func WithSnapshot[T any, PT aggregate.StatePtr[T]](maxMsgs byte, maxInterval tim
 	}
 }
 
-func WithSnapshotCodec[T any, PT aggregate.StatePtr[T]](codec codec.Codec) option[T, PT] {
+func WithCodec[T any, PT aggregate.StatePtr[T]](codec codec.Codec) option[T, PT] {
 	return func(a *options[T, PT]) {
 		a.agOpts = append(a.agOpts, aggregate.WithCodec[T, PT](codec))
 	}
