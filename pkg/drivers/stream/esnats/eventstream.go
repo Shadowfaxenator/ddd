@@ -213,21 +213,19 @@ func aggrIDFromParams(params *stream.SubscribeParams) string {
 }
 
 func (e *eventStreamDriver) processMessage(m natsMessage, a ackNaker, handler func(msg *stream.StoredMsg) error) {
-	var target *aggregate.InvariantViolationError
+
 	sm, err := streamMsgFromNatsMsg(m)
 	if err != nil {
 		e.Logger.Error("load failed", "error", err)
 		return
 	}
 	if err := handler(sm); err != nil {
-		if !errors.As(err, &target) && !errors.Is(err, stream.ErrNonRetriable) {
+		if nonRetErr, ok := errors.AsType[stream.NonRetriableError](err); ok {
+			e.Logger.Warn("invariant violation", "reason", nonRetErr.Err.Error())
+		} else {
 			e.Logger.Warn("redelivering...", "error", err)
 			a.Nak()
 			return
-		} else {
-			if target != nil {
-				e.Logger.Warn("invariant violation", "reason", target.Err.Error())
-			}
 		}
 	}
 	a.Ack()
@@ -253,11 +251,7 @@ func (e *eventStreamDriver) Subscribe(ctx context.Context, handler func(msg *str
 		subs := make(drainList, len(filter))
 		for i, f := range filter {
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
-				adapt, err := newNatsMessageAdapter(msg)
-				if err != nil {
-					e.Logger.Error("failed to create message adapter", "error", err)
-					return
-				}
+				adapt := newNatsMessageAdapter(msg)
 				e.processMessage(adapt, adapt, handler)
 			})
 			if err != nil {

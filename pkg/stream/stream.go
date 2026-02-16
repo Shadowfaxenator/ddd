@@ -17,8 +17,6 @@ import (
 	"github.com/alekseev-bro/ddd/pkg/idempotency"
 )
 
-var ErrNonRetriable = errors.New("non-retriable error")
-
 type Logger interface {
 	Info(msg string, args ...any)
 	Error(msg string, args ...any)
@@ -181,7 +179,7 @@ func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOpti
 		ev, err := a.eventSerder.Deserialize(msg.Kind, msg.Body)
 		if err != nil {
 			a.logger.Error("can't deserialize event", "kind", msg.Kind)
-			return ErrNonRetriable
+			return NonRetriableError{err}
 		}
 		return h.HandleEvents(idempotency.ContextWithKey(ctx, msg.ID), ev)
 	}, params)

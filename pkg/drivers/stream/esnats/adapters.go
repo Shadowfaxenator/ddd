@@ -53,23 +53,18 @@ func (j jsRawMsgAdapter) Seq() uint64 {
 	return j.RawStreamMsg.Sequence
 }
 
-func newNatsMessageAdapter(msg *nats.Msg) (natsMessageAdapter, error) {
-	mt, err := msg.Metadata()
-	if err != nil {
-		return natsMessageAdapter{}, fmt.Errorf("metadata: %w", err)
-	}
+func newNatsMessageAdapter(msg *nats.Msg) natsMessageAdapter {
 	return natsMessageAdapter{
 		msg: msg,
-		mt:  mt,
-	}, nil
+	}
 }
 
 type natsMessageAdapter struct {
 	msg *nats.Msg
-	mt  *nats.MsgMetadata
 }
 
 func (n natsMessageAdapter) Ack() error {
+
 	return n.msg.Ack()
 }
 
@@ -82,7 +77,7 @@ func (n natsMessageAdapter) Headers() nats.Header {
 }
 
 func (n natsMessageAdapter) Timestamp() time.Time {
-	return n.mt.Timestamp
+	return time.Time{}
 }
 
 func (n natsMessageAdapter) Data() []byte {
@@ -96,7 +91,7 @@ func (n natsMessageAdapter) Subject() string {
 
 func (n natsMessageAdapter) Seq() uint64 {
 
-	return n.mt.Sequence.Stream
+	return 0
 }
 
 func newNatsJSMsgAdapter(msg jetstream.Msg) (natsJSMsgAdapter, error) {

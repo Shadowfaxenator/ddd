@@ -21,11 +21,3 @@ func NewID() (ID, error) {
 func (i ID) String() string {
 	return identity.ID(i).String()
 }
-
-type InvariantViolationError struct {
-	Err error
-}
-
-func (e InvariantViolationError) Error() string {
-	return e.Err.Error()
-}

@@ -192,7 +192,7 @@ func (a *Aggregate[T, PT]) Mutate(
 		evts, err = modify(new(T))
 	}
 	if err != nil {
-		invError = &InvariantViolationError{Err: err}
+		invError = &stream.NonRetriableError{Err: err}
 	}
 	if evts == nil {
 		return nil, invError
