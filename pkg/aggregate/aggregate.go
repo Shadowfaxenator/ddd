@@ -188,7 +188,7 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 func (a *Aggregate[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) error {
 	var op []stream.ProjOption
 
-	op = append(op, stream.WithName(typeregistry.TypeNameFrom(h)))
+	op = append(op, stream.WithName(typeregistry.CreateNameFromType(h)))
 	op = append(op, opts...)
 	if err := a.es.Subscribe(ctx, &subscribeHandlerAdapter[T]{h: h}, op...); err != nil {
 		return fmt.Errorf("subscription failed: %w", err)
@@ -306,7 +306,7 @@ type pointerEvent[E any, T any] interface {
 func ProjectEvent[E any, T any, PE pointerEvent[E, T]](ctx context.Context, sub eventKindSubscriber[T], h EventHandler[T, PE]) error {
 	var sentinel PE
 
-	n := fmt.Sprintf("%s", typeregistry.TypeNameFrom(h))
+	n := fmt.Sprintf("%s", typeregistry.CreateNameFromType(h))
 
 	eventKind, err := sub.EventKind(sentinel)
 	if err != nil {

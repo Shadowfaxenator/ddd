@@ -17,7 +17,8 @@ func WithEvent[E any]() Option {
 		if t.Kind() != reflect.Struct {
 			return fmt.Errorf("event '%s' must be a struct and not a pointer", t)
 		}
-		name := typeregistry.TypeNameFor[E](typeregistry.WithNoPkg())
+
+		name := typeregistry.TypeNameFor[E](typeregistry.WithPlainTextPkg())
 		return a.reg.Register(name, func() any { return new(E) })
 	}
 }

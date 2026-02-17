@@ -8,29 +8,28 @@ func WithLogger(logger logger) option {
 	}
 }
 
-type typeNameFromOptions struct {
+type createNameOptions struct {
 	delimiter string
 	noPkg     bool
+	plainPkg  bool
 }
 
-type typeNameFromOption func(*typeNameFromOptions)
+type createNameOption func(*createNameOptions)
 
-func WithDelimiter(delimiter string) typeNameFromOption {
-	return func(opts *typeNameFromOptions) {
+func WithDelimiter(delimiter string) createNameOption {
+	return func(opts *createNameOptions) {
 		opts.delimiter = delimiter
 	}
 }
 
-func WithNoPkg() typeNameFromOption {
-	return func(opts *typeNameFromOptions) {
+func WithNoPkg() createNameOption {
+	return func(opts *createNameOptions) {
 		opts.noPkg = true
 	}
 }
 
-func WithTypeNameFromOptions(opts ...typeNameFromOption) typeNameFromOption {
-	return func(options *typeNameFromOptions) {
-		for _, opt := range opts {
-			opt(options)
-		}
+func WithPlainTextPkg() createNameOption {
+	return func(opts *createNameOptions) {
+		opts.plainPkg = true
 	}
 }

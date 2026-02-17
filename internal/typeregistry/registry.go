@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/alekseev-bro/ddd/internal/prettylog"
@@ -90,9 +91,9 @@ func (r *registry) Kind(in any) (string, error) {
 	return name, nil
 }
 
-func TypeNameFor[T any](opts ...typeNameFromOption) string {
+func TypeNameFor[T any](opts ...createNameOption) string {
 	var zero T
-	return TypeNameFrom(zero, opts...)
+	return CreateNameFromType(zero, opts...)
 }
 
 type Kinder interface {
@@ -109,9 +110,9 @@ type CreateKinderRegistry interface {
 	Kinder
 }
 
-func TypeNameFrom(e any, opts ...typeNameFromOption) string {
+func CreateNameFromType(e any, opts ...createNameOption) string {
 
-	cfg := &typeNameFromOptions{delimiter: "::"}
+	cfg := &createNameOptions{delimiter: "::"}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -119,10 +120,17 @@ func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
+	var bctx string
 
-	sha := sha1.New()
-	sha.Write([]byte(t.PkgPath()))
-	bctx := base64.RawURLEncoding.EncodeToString(sha.Sum(nil)[:5])
+	if cfg.plainPkg {
+		s := strings.Split(t.PkgPath(), "/")
+		bctx = s[len(s)-1]
+	} else {
+		sha := sha1.New()
+		sha.Write([]byte(t.PkgPath()))
+		bctx = base64.RawURLEncoding.EncodeToString(sha.Sum(nil)[:5])
+	}
+
 	var tname string
 	switch t.Kind() {
 	case reflect.Struct:
@@ -135,5 +143,5 @@ func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	if cfg.noPkg {
 		return tname
 	}
-	return fmt.Sprintf("%s%s%s", tname, cfg.delimiter, bctx)
+	return fmt.Sprintf("%s%s%s", bctx, cfg.delimiter, tname)
 }

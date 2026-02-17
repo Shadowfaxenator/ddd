@@ -35,7 +35,6 @@ type eventSerder serde.Serder[any]
 
 type stream struct {
 	subs        DrainList
-	name        string
 	store       Store
 	reg         typeregistry.CreateKinderRegistry
 	eventSerder eventSerder
@@ -214,7 +213,7 @@ func (s *stream) Drain() error {
 
 // Subscribe creates a new subscription on aggegate events with the given handler.
 func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOption) error {
-	dn := typeregistry.TypeNameFrom(h)
+	dn := typeregistry.CreateNameFromType(h)
 
 	params := &SubscribeParams{
 		DurableName: dn,
