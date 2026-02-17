@@ -3,38 +3,35 @@ package stream
 import (
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/alekseev-bro/ddd/internal/serde"
+	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/codec"
 )
 
-type Option func(*stream)
+type Option func(*stream) error
 
-func WithEvent[E any](name string) Option {
-
-	if reflect.TypeFor[E]().Kind() != reflect.Struct {
-		panic(fmt.Sprintf("event '%s' must be a struct and not a pointer", name))
-	}
-	return func(a *stream) {
-
-		if name == "" {
-			name = reflect.TypeFor[E]().Name()
+func WithEvent[E any]() Option {
+	return func(a *stream) error {
+		t := reflect.TypeFor[E]()
+		if t.Kind() != reflect.Struct {
+			return fmt.Errorf("event '%s' must be a struct and not a pointer", t)
 		}
-		name = strings.ReplaceAll(name, ".", "")
-
-		a.reg.Register(name, func() any { return new(E) })
+		name := typeregistry.TypeNameFor[E](typeregistry.WithNoPkg())
+		return a.reg.Register(name, func() any { return new(E) })
 	}
 }
 
 func WithCodec(c codec.Codec) Option {
-	return func(a *stream) {
+	return func(a *stream) error {
 		a.eventSerder = serde.NewSerder[any](a.reg, c)
+		return nil
 	}
 }
 
 func WithLogger(logger logger) Option {
-	return func(a *stream) {
+	return func(a *stream) error {
 		a.logger = logger
+		return nil
 	}
 }

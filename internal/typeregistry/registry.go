@@ -5,11 +5,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/rand/v2"
 	"reflect"
 	"strconv"
 	"sync"
+
+	"github.com/alekseev-bro/ddd/internal/prettylog"
 )
 
 type registry struct {
@@ -26,7 +27,7 @@ type logger interface {
 
 func New(opts ...option) *registry {
 	r := &registry{
-		logger: slog.Default(),
+		logger: prettylog.NewDefault(),
 		ctors:  make(map[string]ctor),
 		types:  make(map[reflect.Type]string),
 	}
@@ -39,22 +40,20 @@ func New(opts ...option) *registry {
 type ctor = func() any
 
 // Register registers a type, it's not thread safe
-func (r *registry) Register(tname string, c ctor) {
+func (r *registry) Register(tname string, c ctor) error {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.types[reflect.TypeOf(c())]; ok {
-		r.logger.Warn("type already registered", "kind", reflect.TypeOf(c()))
-		return
-
+		return fmt.Errorf("type %T already registered", c())
 	}
 	if _, ok := r.ctors[tname]; ok {
-		r.logger.Warn("type already registered", "kind", tname)
-		return
+		return fmt.Errorf("type %s already registered", tname)
 	}
 	r.types[reflect.TypeOf(c())] = tname
 	r.ctors[tname] = c
 	r.logger.Info("type registered", "kind", tname)
+	return nil
 }
 
 func (r *registry) Create(name string) (any, error) {
@@ -80,6 +79,12 @@ func (r *registry) Kind(in any) (string, error) {
 	r.mu.RUnlock()
 
 	if !ok {
+		if t.Kind() != reflect.Pointer {
+			pt := reflect.PointerTo(t)
+			if _, ptrOK := r.types[pt]; ptrOK {
+				return "", fmt.Errorf("registry: %v is registered as %v; emit pointer event", t, pt)
+			}
+		}
 		return "", fmt.Errorf("registry: type %v is not registered", t)
 	}
 	return name, nil
@@ -88,12 +93,6 @@ func (r *registry) Kind(in any) (string, error) {
 func TypeNameFor[T any](opts ...typeNameFromOption) string {
 	var zero T
 	return TypeNameFrom(zero, opts...)
-}
-
-type typeNameFromOption string
-
-func WithDelimiter(delimiter string) typeNameFromOption {
-	return typeNameFromOption(delimiter)
 }
 
 type Kinder interface {
@@ -105,15 +104,16 @@ type Creator interface {
 }
 
 type CreateKinderRegistry interface {
-	Register(tname string, c func() any)
+	Register(tname string, c func() any) error
 	Creator
 	Kinder
 }
 
 func TypeNameFrom(e any, opts ...typeNameFromOption) string {
-	delim := "::"
+
+	cfg := &typeNameFromOptions{delimiter: "::"}
 	for _, opt := range opts {
-		delim = string(opt)
+		opt(cfg)
 	}
 	t := reflect.TypeOf(e)
 	if t.Kind() == reflect.Pointer {
@@ -123,15 +123,17 @@ func TypeNameFrom(e any, opts ...typeNameFromOption) string {
 	sha := sha1.New()
 	sha.Write([]byte(t.PkgPath()))
 	bctx := base64.RawURLEncoding.EncodeToString(sha.Sum(nil)[:5])
-
+	var tname string
 	switch t.Kind() {
-
 	case reflect.Struct:
-		return fmt.Sprintf("%s%s%s", t.Name(), delim, bctx)
+		tname = t.Name()
 	case reflect.Pointer:
-		return fmt.Sprintf("%s%s%s", t.Elem().Name(), delim, bctx)
+		tname = t.Elem().Name()
 	default:
-		return fmt.Sprintf("%s%s%s", strconv.FormatUint(rand.Uint64(), 10), delim, bctx)
+		tname = strconv.FormatUint(rand.Uint64(), 10)
 	}
-
+	if cfg.noPkg {
+		return tname
+	}
+	return fmt.Sprintf("%s%s%s", tname, cfg.delimiter, bctx)
 }

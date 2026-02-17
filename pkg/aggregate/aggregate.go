@@ -5,42 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"log/slog"
-	"os"
-	"reflect"
 	"time"
 
+	"github.com/alekseev-bro/ddd/internal/prettylog"
 	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/identity"
 	"github.com/alekseev-bro/ddd/pkg/snapshot"
 	"github.com/alekseev-bro/ddd/pkg/stream"
-	"github.com/lmittmann/tint"
 )
-
-func init() {
-	w := os.Stderr
-	var handler slog.Handler
-	if os.Getenv("ENV") == "production" {
-		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})
-	} else {
-		handler = tint.NewHandler(w, &tint.Options{
-			ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
-				switch attr.Key {
-				case slog.MessageKey:
-					return tint.Attr(4, attr)
-				}
-
-				return attr
-			},
-			Level:      slog.LevelDebug,
-			TimeFormat: time.Kitchen,
-		})
-	}
-	l := slog.New(handler)
-	slog.SetDefault(l)
-}
 
 // Aggregate store type it implements the Aggregate interface.
 type StatePtr[T any] interface {
@@ -50,6 +22,14 @@ type StatePtr[T any] interface {
 type snapshotStore[T any] interface {
 	Save(ctx context.Context, a *snapshot.Aggregate[T]) error
 	Load(ctx context.Context, id identity.ID) *snapshot.Snapshot[T]
+}
+
+func (ag *Aggregate[T, PT]) Drain() error {
+	close(ag.snapChan)
+	if err := ag.es.Drain(); err != nil {
+		return fmt.Errorf("aggregate drain failed: %w", err)
+	}
+	return nil
 }
 
 func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
@@ -63,11 +43,13 @@ func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
 					return
 				}
 				ctxSnap, cancel := context.WithTimeout(ctx, ag.storeConfig.SnapshotTimeout)
-				defer cancel()
+
 				if err := ag.ss.Save(ctxSnap, a); err != nil {
 					ag.logger().Error("snapshot save", "error", err.Error())
+					cancel()
 					continue
 				}
+				cancel()
 				ag.logger().Info("snapshot saved", "id", a.ID.String(), "version", a.Version, "sequence", a.Sequence)
 			}
 		}
@@ -75,19 +57,25 @@ func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapshot.Store, opts ...Option[T, PT]) *Aggregate[T, PT] {
+func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapshot.Store, opts ...Option[T, PT]) (*Aggregate[T, PT], error) {
 	opt := new(storeOptions[T, PT])
 	opt.storeConfig = storeConfig{
 		SnapshotMsgThreshold: snapshot.DefaultSizeInEvents,
 		SnapshotMinInterval:  snapshot.DefaultMinInterval,
 		SnapshotTimeout:      snapshot.DefaultTimeout,
-		Logger:               slog.Default(),
+		Logger:               prettylog.NewDefault(),
 		SnapshotMaxTasks:     255,
 	}
 	for _, o := range opts {
-		o(opt)
+		if err := o(opt); err != nil {
+			return nil, fmt.Errorf("failed to apply option: %w", err)
+		}
+
 	}
-	str := stream.New(es, opt.streamOptions...)
+	str, err := stream.New(es, opt.streamOptions...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create event stream: %w", err)
+	}
 	snap := snapshot.NewStore[T](ss, opt.snapshotOptions...)
 
 	aggr := &Aggregate[T, PT]{
@@ -100,13 +88,13 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 	aggr.startSnapshoting(ctx)
 	//	var zero T
 
-	return aggr
+	return aggr, nil
 }
 
 // Subscriber is an interface that defines the Project method for projecting events on an
 // Events must implement the Event interface.
 type Subscriber[T any] interface {
-	Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error)
+	Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) error
 }
 type eventKindSubscriber[T any] interface {
 	Subscriber[T]
@@ -128,7 +116,8 @@ type EventHandler[T any, E Evolver[T]] interface {
 type eventStream interface {
 	LoadEvents(ctx context.Context, id identity.ID, seq uint64) iter.Seq2[*stream.Event, error]
 	SaveEvents(ctx context.Context, id identity.ID, expectedSequence uint64, events []any) ([]stream.EventMetadata, error)
-	Subscribe(ctx context.Context, h stream.EventHandler, opts ...stream.ProjOption) (stream.Drainer, error)
+	Subscribe(ctx context.Context, h stream.EventHandler, opts ...stream.ProjOption) error
+	Drain() error
 }
 
 // Mutator is an interface that defines the Update method for executing commands on an
@@ -196,12 +185,16 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 	return aggr, nil
 }
 
-func (a *Aggregate[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) (stream.Drainer, error) {
+func (a *Aggregate[T, PT]) Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) error {
 	var op []stream.ProjOption
 
 	op = append(op, stream.WithName(typeregistry.TypeNameFrom(h)))
 	op = append(op, opts...)
-	return a.es.Subscribe(ctx, &subscribeHandlerAdapter[T]{h: h}, op...)
+	if err := a.es.Subscribe(ctx, &subscribeHandlerAdapter[T]{h: h}, op...); err != nil {
+		return fmt.Errorf("subscription failed: %w", err)
+	}
+
+	return nil
 }
 
 // Update executes a command on the aggregate root.
@@ -285,7 +278,10 @@ type handleEventAdapter[E Evolver[T], T any] struct {
 }
 
 func (h *handleEventAdapter[E, T]) HandleEvents(ctx context.Context, event Evolver[T]) error {
-	return h.h.HandleEvent(ctx, event.(E))
+	if e, ok := event.(E); ok {
+		return h.h.HandleEvent(ctx, e)
+	}
+	return stream.NonRetriableError{Err: fmt.Errorf("event is not Evolver[T]")}
 }
 
 type subscribeHandlerAdapter[T any] struct {
@@ -302,27 +298,28 @@ func (s *subscribeHandlerAdapter[T]) HandleEvents(ctx context.Context, ev any) e
 
 }
 
-func ProjectEvent[E Evolver[T], T any](ctx context.Context, sub eventKindSubscriber[T], h EventHandler[T, E]) (stream.Drainer, error) {
+type pointerEvent[E any, T any] interface {
+	*E
+	Evolver[T]
+}
 
-	var zero any
-	t := reflect.TypeFor[E]()
-	switch t.Kind() {
-	case reflect.Struct:
-		zero = new(E)
-	case reflect.Pointer:
-		var z E
-		zero = z
-	default:
-		return nil, fmt.Errorf("unsupported event type: %s", t)
-	}
+func ProjectEvent[E any, T any, PE pointerEvent[E, T]](ctx context.Context, sub eventKindSubscriber[T], h EventHandler[T, PE]) error {
+	var sentinel PE
 
 	n := fmt.Sprintf("%s", typeregistry.TypeNameFrom(h))
 
-	eventKind, err := sub.EventKind(zero.(E))
-
+	eventKind, err := sub.EventKind(sentinel)
 	if err != nil {
-		return nil, fmt.Errorf("project: %w", err)
+		return fmt.Errorf("project event failed: %w", err)
 	}
-	return sub.Subscribe(ctx, &handleEventAdapter[E, T]{h: h}, stream.WithFilterByEvent(eventKind), stream.WithName(n))
+	if err := sub.Subscribe(
+		ctx,
+		&handleEventAdapter[PE, T]{h: h},
+		stream.WithFilterByEvent(eventKind),
+		stream.WithName(n),
+	); err != nil {
+		return fmt.Errorf("project event failed: %w", err)
+	}
+	return nil
 
 }

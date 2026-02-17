@@ -1,13 +1,13 @@
-package esnats
+package natsstream
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"time"
 
+	"github.com/alekseev-bro/ddd/internal/prettylog"
 	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/stream"
@@ -46,7 +46,7 @@ func NewStore(ctx context.Context, js jetstream.JetStream, name string, opts ...
 	cfg := &eventStreamConfig{
 		StoreType:     Disk,
 		Deduplication: defaultDeduplication,
-		Logger:        slog.Default(),
+		Logger:        prettylog.NewDefault(),
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -84,7 +84,7 @@ func (s *eventStore) allSubjects() string {
 func (s *eventStore) Save(ctx context.Context, aggrID int64, expectedSequence uint64, msgs []stream.Msg, idempotencyKey int64) ([]stream.EventMetadata, error) {
 	strAggrID := strconv.FormatInt(aggrID, 10)
 	if msgs == nil {
-		return nil, nil
+		return nil, stream.NonRetriableError{Err: errors.New("no messages to save")}
 	}
 
 	nmsgs := make([]*nats.Msg, len(msgs))
@@ -115,7 +115,7 @@ func (s *eventStore) Save(ctx context.Context, aggrID int64, expectedSequence ui
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msgs[0].Kind)
 		if ack.Duplicate {
 			s.Logger.Warn("duplicate event not stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
-			return nil, nil
+			return nil, stream.NonRetriableError{Err: errors.New("duplicate event")}
 		}
 
 		s.Logger.Info("event stored", "ID", msgs[0].ID, "kind", msgs[0].Kind, "subject", sub, "stream", s.name)
@@ -141,7 +141,7 @@ func (s *eventStore) Save(ctx context.Context, aggrID int64, expectedSequence ui
 	for i, msg := range msgs {
 		outmsgs[i] = stream.EventMetadata{
 			MsgID:    msg.ID,
-			Sequence: batchAck.Sequence + uint64(msglen) - uint64(i) - 1,
+			Sequence: batchAck.Sequence - uint64(msglen) + uint64(i) + 1,
 		}
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
 		s.Logger.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
@@ -189,19 +189,19 @@ type drainAdapter struct {
 }
 
 func (d *drainAdapter) Drain() error {
-	d.ConsumeContext.Drain()
-	return nil
-}
-
-type drainList []stream.Drainer
-
-func (d drainList) Drain() error {
-	for _, drainer := range d {
-		if err := drainer.Drain(); err != nil {
-			return err
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		d.ConsumeContext.Drain()
+		done <- nil
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
 	}
-	return nil
 }
 
 func aggrIDFromParams(params *stream.SubscribeParams) string {
@@ -248,7 +248,7 @@ func (e *eventStore) Subscribe(ctx context.Context, handler func(msg *stream.Sto
 		filter = append(filter, fmt.Sprintf("%s.%s.%s", e.name, aggrIDFromParams(params), "*"))
 	}
 	if params.QoS.Delivery == qos.AtMostOnce {
-		subs := make(drainList, len(filter))
+		subs := make(stream.DrainList, len(filter))
 		for i, f := range filter {
 			sub, err := e.js.Conn().Subscribe(f, func(msg *nats.Msg) {
 				adapt := newNatsMessageAdapter(msg)
@@ -293,6 +293,6 @@ func (e *eventStore) Subscribe(ctx context.Context, handler func(msg *stream.Sto
 		return nil, fmt.Errorf("subscription consume: %w", err)
 	}
 
-	return drainList{&drainAdapter{ConsumeContext: ct}}, nil
+	return stream.DrainList{&drainAdapter{ConsumeContext: ct}}, nil
 
 }
