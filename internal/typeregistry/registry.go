@@ -128,6 +128,7 @@ func CreateNameFromType(e any, opts ...createNameOption) string {
 	} else {
 		sha := sha1.New()
 		sha.Write([]byte(t.PkgPath()))
+		//	bctx = hex.EncodeToString(sha.Sum(nil)[:5])
 		bctx = base64.RawURLEncoding.EncodeToString(sha.Sum(nil)[:5])
 	}
 
