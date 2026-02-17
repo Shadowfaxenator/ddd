@@ -143,6 +143,7 @@ func (s *eventStore) Save(ctx context.Context, aggrID int64, expectedSequence ui
 			MsgID:    msg.ID,
 			Sequence: batchAck.Sequence - uint64(msglen) + uint64(i) + 1,
 		}
+
 		sub := fmt.Sprintf("%s.%s", s.subjectNameForID(strAggrID), msg.Kind)
 		s.Logger.Info("event stored", "ID", msg.ID, "kind", msg.Kind, "subject", sub, "stream", s.name)
 	}
