@@ -15,7 +15,7 @@ import (
 )
 
 // Aggregate store type it implements the Aggregate interface.
-type StatePtr[T any] interface {
+type AggregatePtr[T any] interface {
 	*T
 }
 
@@ -57,8 +57,8 @@ func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
 }
 
 // New creates a new aggregate root using the provided event stream and snapshot store.
-func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapshot.Store, opts ...Option[T, PT]) (*Aggregate[T, PT], error) {
-	opt := new(storeOptions[T, PT])
+func New[State any, PT AggregatePtr[State]](ctx context.Context, es stream.Store, ss snapshot.Store, opts ...Option[State]) (*Aggregate[State, PT], error) {
+	opt := new(storeOptions[State])
 	opt.storeConfig = storeConfig{
 		SnapshotMsgThreshold: snapshot.DefaultSizeInEvents,
 		SnapshotMinInterval:  snapshot.DefaultMinInterval,
@@ -76,13 +76,13 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event stream: %w", err)
 	}
-	snap := snapshot.NewStore[T](ss, opt.snapshotOptions...)
+	snap := snapshot.NewStore[State](ss, opt.snapshotOptions...)
 
-	aggr := &Aggregate[T, PT]{
+	aggr := &Aggregate[State, PT]{
 		storeConfig: opt.storeConfig,
 		es:          str,
 		ss:          snap,
-		snapChan:    make(chan *snapshot.Aggregate[T], opt.SnapshotMaxTasks),
+		snapChan:    make(chan *snapshot.Aggregate[State], opt.SnapshotMaxTasks),
 		eventTypes:  str,
 	}
 	aggr.startSnapshoting(ctx)
@@ -93,24 +93,24 @@ func New[T any, PT StatePtr[T]](ctx context.Context, es stream.Store, ss snapsho
 
 // Subscriber is an interface that defines the Project method for projecting events on an
 // Events must implement the Event interface.
-type Subscriber[T any] interface {
-	Subscribe(ctx context.Context, h EventsHandler[T], opts ...stream.ProjOption) error
+type Subscriber[Aggregate any] interface {
+	Subscribe(ctx context.Context, h EventsHandler[Aggregate], opts ...stream.ProjOption) error
 }
-type eventKindSubscriber[T any] interface {
-	Subscriber[T]
-	EventKind(in Evolver[T]) (string, error)
-}
-
-type CommandHandler[T any, C any] interface {
-	HandleCommand(ctx context.Context, cmd C) ([]stream.EventMetadata, error)
+type eventKindSubscriber[Aggregate any] interface {
+	Subscriber[Aggregate]
+	EventKind(in Evolver[Aggregate]) (string, error)
 }
 
-type EventsHandler[T any] interface {
-	HandleEvents(ctx context.Context, event Evolver[T]) error
+type CommandHandler[Aggregate any, Command any] interface {
+	HandleCommand(ctx context.Context, cmd Command) ([]stream.EventMetadata, error)
 }
 
-type EventHandler[T any, E Evolver[T]] interface {
-	HandleEvent(ctx context.Context, event E) error
+type EventsHandler[Aggregate any] interface {
+	HandleEvents(ctx context.Context, event Evolver[Aggregate]) error
+}
+
+type EventHandler[Aggregate any, Event Evolver[Aggregate]] interface {
+	HandleEvent(ctx context.Context, event Event) error
 }
 
 type eventStream interface {
@@ -123,8 +123,8 @@ type eventStream interface {
 // Mutator is an interface that defines the Update method for executing commands on an
 // Each command is executed in a transactional manner, ensuring that the aggregate state is consistent.
 // Commands must implement the Executer interface.
-type Mutator[T any, PT StatePtr[T]] interface {
-	Mutate(ctx context.Context, id ID, modify func(state PT) (Events[T], error)) ([]stream.EventMetadata, error)
+type Mutator[Aggregate any, PT AggregatePtr[Aggregate]] interface {
+	Mutate(ctx context.Context, id ID, modify func(state PT) (Events[Aggregate], error)) ([]stream.EventMetadata, error)
 }
 
 type eventKinder interface {
@@ -135,7 +135,7 @@ func (a *Aggregate[T, PT]) logger() logger {
 	return a.storeConfig.Logger
 }
 
-type Aggregate[T any, PT StatePtr[T]] struct {
+type Aggregate[T any, PT AggregatePtr[T]] struct {
 	storeConfig storeConfig
 	es          eventStream
 	ss          snapshotStore[T]

@@ -26,30 +26,32 @@ type storeConfig struct {
 // func (o StoreOption[T, PT]) ToStreamOption() stream.Option{
 
 // }
-type storeOptions[T any, PT StatePtr[T]] struct {
+type storeOptions[Aggregate any] struct {
 	streamOptions   []stream.Option
-	snapshotOptions []snapshot.Option[T]
+	snapshotOptions []snapshot.Option[Aggregate]
 	storeConfig
 }
 
-type Option[T any, PT StatePtr[T]] func(a *storeOptions[T, PT]) error
+type Option[Aggregate any] func(a *storeOptions[Aggregate]) error
 
-func WithEvent[E any, T any, PE interface {
-	*E
-	Evolver[T]
-}, PT StatePtr[T]]() Option[T, PT] {
+type PtrEvolver[Event any, Aggregate any] interface {
+	*Event
+	Evolver[Aggregate]
+}
 
-	return func(a *storeOptions[T, PT]) error {
+func WithEvent[Event any, Aggregate any, PE PtrEvolver[Event, Aggregate]]() Option[Aggregate] {
 
-		a.streamOptions = append(a.streamOptions, stream.WithEvent[E]())
+	return func(a *storeOptions[Aggregate]) error {
+
+		a.streamOptions = append(a.streamOptions, stream.WithEvent[Event]())
 
 		return nil
 	}
 }
 
 // WithSnapshotMinInterval sets the minimum interval between snapshots. Not less than snapshot.UpperMinInterval second and not more than snapshot.LowerMinInterval minutes.
-func WithSnapshotMinInterval[T any, PT StatePtr[T]](interval time.Duration) Option[T, PT] {
-	return func(a *storeOptions[T, PT]) error {
+func WithSnapshotMinInterval[Aggregate any](interval time.Duration) Option[Aggregate] {
+	return func(a *storeOptions[Aggregate]) error {
 		if interval > snapshot.UpperMinInterval || interval < snapshot.LowerMinInterval {
 			return errors.New("invalid interval")
 		}
@@ -59,8 +61,8 @@ func WithSnapshotMinInterval[T any, PT StatePtr[T]](interval time.Duration) Opti
 }
 
 // WithSnapshotTimeout sets the timeout for snapshotting. Not less than snapshot.UpperTimeout second and not more than snapshot.LowerTimeout seconds.
-func WithSnapshotTimeout[T any, PT StatePtr[T]](timeout time.Duration) Option[T, PT] {
-	return func(a *storeOptions[T, PT]) error {
+func WithSnapshotTimeout[Aggregate any](timeout time.Duration) Option[Aggregate] {
+	return func(a *storeOptions[Aggregate]) error {
 		if timeout > snapshot.UpperTimeout || timeout < snapshot.LowerTimeout {
 			return errors.New("invalid timeout")
 		}
@@ -69,30 +71,30 @@ func WithSnapshotTimeout[T any, PT StatePtr[T]](timeout time.Duration) Option[T,
 	}
 }
 
-func WithSnapshotEventCount[T any, PT StatePtr[T]](count uint16) Option[T, PT] {
-	return func(a *storeOptions[T, PT]) error {
+func WithSnapshotEventCount[Aggregate any](count uint16) Option[Aggregate] {
+	return func(a *storeOptions[Aggregate]) error {
 		a.storeConfig.SnapshotMsgThreshold = count
 		return nil
 	}
 }
 
-func WithCodec[T any, PT StatePtr[T]](codec codec.Codec) Option[T, PT] {
-	return func(a *storeOptions[T, PT]) error {
-		a.snapshotOptions = append(a.snapshotOptions, snapshot.WithCodec[T](codec))
+func WithCodec[Aggregate any](codec codec.Codec) Option[Aggregate] {
+	return func(a *storeOptions[Aggregate]) error {
+		a.snapshotOptions = append(a.snapshotOptions, snapshot.WithCodec[Aggregate](codec))
 		a.streamOptions = append(a.streamOptions, stream.WithCodec(codec))
 		return nil
 	}
 }
 
-func WithLogger[T any, PT StatePtr[T]](logger logger) Option[T, PT] {
-	return func(a *storeOptions[T, PT]) error {
+func WithLogger[Aggregate any](logger logger) Option[Aggregate] {
+	return func(a *storeOptions[Aggregate]) error {
 		a.storeConfig.Logger = logger
 		return nil
 	}
 }
 
-func WithSnapshotMaxTasks[T any, PT StatePtr[T]](maxTasks byte) Option[T, PT] {
-	return func(a *storeOptions[T, PT]) error {
+func WithSnapshotMaxTasks[Aggregate any](maxTasks byte) Option[Aggregate] {
+	return func(a *storeOptions[Aggregate]) error {
 		a.storeConfig.SnapshotMaxTasks = maxTasks
 		return nil
 	}

@@ -25,90 +25,87 @@ const (
 	Memory
 )
 
-type options[T any, PT aggregate.StatePtr[T]] struct {
+type options[T any] struct {
 	streamName        string
 	snapshotStoreName string
 	esCfg             []natsstream.Option
 	ssCfg             []natssnapshot.Option
-	agOpts            []aggregate.Option[T, PT]
+	agOpts            []aggregate.Option[T]
 }
 
-type option[T any, PT aggregate.StatePtr[T]] func(c *options[T, PT])
+type option[T any] func(c *options[T])
 
-func WithStreamName[T any, PT aggregate.StatePtr[T]](name string) option[T, PT] {
-	return func(opts *options[T, PT]) {
+func WithStreamName[T any](name string) option[T] {
+	return func(opts *options[T]) {
 		opts.streamName = name
 	}
 }
 
-func WithSnapshotStoreName[T any, PT aggregate.StatePtr[T]](name string) option[T, PT] {
-	return func(opts *options[T, PT]) {
+func WithSnapshotStoreName[T any](name string) option[T] {
+	return func(opts *options[T]) {
 		opts.snapshotStoreName = name
 	}
 }
 
-func WithInMemory[T any, PT aggregate.StatePtr[T]]() option[T, PT] {
-	return func(opts *options[T, PT]) {
+func WithInMemory[T any]() option[T] {
+	return func(opts *options[T]) {
 		opts.esCfg = append(opts.esCfg, natsstream.WithStoreType(natsstream.Memory))
 		opts.ssCfg = append(opts.ssCfg, natssnapshot.WithStoreType(natssnapshot.Memory))
 	}
 }
 
-func WithSnapshotMaxTasks[T any, PT aggregate.StatePtr[T]](maxTasks byte) option[T, PT] {
-	return func(opts *options[T, PT]) {
-		opts.agOpts = append(opts.agOpts, aggregate.WithSnapshotMaxTasks[T, PT](maxTasks))
+func WithSnapshotMaxTasks[T any](maxTasks byte) option[T] {
+	return func(opts *options[T]) {
+		opts.agOpts = append(opts.agOpts, aggregate.WithSnapshotMaxTasks[T](maxTasks))
 	}
 }
 
-func WithDeduplication[T any, PT aggregate.StatePtr[T]](duration time.Duration) option[T, PT] {
-	return func(opts *options[T, PT]) {
+func WithDeduplication[T any](duration time.Duration) option[T] {
+	return func(opts *options[T]) {
 		opts.esCfg = append(opts.esCfg, natsstream.WithDeduplication(duration))
 	}
 }
 
-func WithEvent[E any, T any, PE interface {
-	*E
-	aggregate.Evolver[T]
-}, PT aggregate.StatePtr[T]]() option[T, PT] {
-	return func(o *options[T, PT]) {
-		o.agOpts = append(o.agOpts, aggregate.WithEvent[E, T, PE, PT]())
+func WithEvent[Event any, Aggregate any, PE aggregate.PtrEvolver[Event, Aggregate]]() option[Aggregate] {
+	return func(o *options[Aggregate]) {
+		o.agOpts = append(o.agOpts, aggregate.WithEvent[Event, Aggregate, PE]())
 	}
 }
 
-func WithSnapshotMinInterval[T any, PT aggregate.StatePtr[T]](interval time.Duration) option[T, PT] {
-	return func(a *options[T, PT]) {
+func WithSnapshotMinInterval[T any](interval time.Duration) option[T] {
+	return func(a *options[T]) {
 		if interval > snapshot.UpperMinInterval || interval < snapshot.LowerMinInterval {
 			return
 		}
-		a.agOpts = append(a.agOpts, aggregate.WithSnapshotMinInterval[T, PT](interval))
+		a.agOpts = append(a.agOpts, aggregate.WithSnapshotMinInterval[T](interval))
 	}
 }
 
 // WithSnapshotTimeout sets the timeout for snapshotting. Not less than snapshot.UpperTimeout second and not more than snapshot.LowerTimeout seconds.
-func WithSnapshotTimeout[T any, PT aggregate.StatePtr[T]](timeout time.Duration) option[T, PT] {
-	return func(a *options[T, PT]) {
+func WithSnapshotTimeout[T any](timeout time.Duration) option[T] {
+	return func(a *options[T]) {
 		if timeout > snapshot.UpperTimeout || timeout < snapshot.LowerTimeout {
 			return
 		}
-		a.agOpts = append(a.agOpts, aggregate.WithSnapshotTimeout[T, PT](timeout))
+		a.agOpts = append(a.agOpts, aggregate.WithSnapshotTimeout[T](timeout))
 	}
 }
 
-func WithSnapshotEventCount[T any, PT aggregate.StatePtr[T]](count uint16) option[T, PT] {
-	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, aggregate.WithSnapshotEventCount[T, PT](count))
+func WithSnapshotEventCount[T any](count uint16) option[T] {
+	return func(a *options[T]) {
+		a.agOpts = append(a.agOpts, aggregate.WithSnapshotEventCount[T](count))
 	}
 }
 
-func WithCodec[T any, PT aggregate.StatePtr[T]](codec codec.Codec) option[T, PT] {
-	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, aggregate.WithCodec[T, PT](codec))
+func WithCodec[T any](codec codec.Codec) option[T] {
+	return func(a *options[T]) {
+		a.agOpts = append(a.agOpts, aggregate.WithCodec[T](codec))
 	}
 }
 
-func WithLogger[T any, PT aggregate.StatePtr[T]](logger logger) option[T, PT] {
-	return func(a *options[T, PT]) {
-		a.agOpts = append(a.agOpts, aggregate.WithLogger[T, PT](logger))
+func WithLogger[T any](logger logger) option[T] {
+	return func(a *options[T]) {
+		a.agOpts = append(a.agOpts, aggregate.WithLogger[T](logger))
 		a.esCfg = append(a.esCfg, natsstream.WithLogger(logger))
 	}
 }

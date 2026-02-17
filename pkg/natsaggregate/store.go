@@ -12,9 +12,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T, PT]) (*aggregate.Aggregate[T, PT], error) {
+func New[T any, PT aggregate.AggregatePtr[T]](ctx context.Context, js jetstream.JetStream, opts ...option[T]) (*aggregate.Aggregate[T, PT], error) {
 
-	cfg := &options[T, PT]{}
+	cfg := &options[T]{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -34,7 +34,7 @@ func New[T any, PT aggregate.StatePtr[T]](ctx context.Context, js jetstream.JetS
 		return nil, fmt.Errorf("snapshot driver: %w", err)
 	}
 
-	return aggregate.New(ctx, es, ss, cfg.agOpts...)
+	return aggregate.New[T, PT](ctx, es, ss, cfg.agOpts...)
 }
 
 type saver interface {
