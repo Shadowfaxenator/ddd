@@ -1,22 +1,21 @@
 package stream
 
 import (
-	"github.com/alekseev-bro/ddd/internal/typeregistry"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 )
 
 type ProjOption func(p *SubscribeParams)
+
 type SubscribeParams struct {
 	DurableName string
 	Kind        []string
-	AggrID      string
+	AggregateID string
 	QoS         qos.QoS
-	Reg         typeregistry.Kinder
 }
 
 func WithFilterByAggregateID(id string) ProjOption {
 	return func(p *SubscribeParams) {
-		p.AggrID = id
+		p.AggregateID = id
 	}
 }
 

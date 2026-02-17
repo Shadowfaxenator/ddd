@@ -217,7 +217,6 @@ func (a *stream) Subscribe(ctx context.Context, h EventHandler, opts ...ProjOpti
 
 	params := &SubscribeParams{
 		DurableName: dn,
-		Reg:         a.reg,
 	}
 	for _, opt := range opts {
 		if opt != nil {

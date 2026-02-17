@@ -205,8 +205,8 @@ func (d *drainAdapter) Drain() error {
 }
 
 func aggrIDFromParams(params *stream.SubscribeParams) string {
-	if params.AggrID != "" {
-		return params.AggrID
+	if params.AggregateID != "" {
+		return params.AggregateID
 	}
 
 	return "*"
