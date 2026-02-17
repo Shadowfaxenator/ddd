@@ -101,7 +101,7 @@ type eventKindSubscriber[Aggregate any] interface {
 	EventKind(in Evolver[Aggregate]) (string, error)
 }
 
-type CommandHandler[Aggregate any, Command any] interface {
+type CommandHandler[Command any, Aggregate any] interface {
 	HandleCommand(ctx context.Context, cmd Command) ([]stream.EventMetadata, error)
 }
 

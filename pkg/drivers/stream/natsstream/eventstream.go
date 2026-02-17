@@ -41,7 +41,7 @@ const (
 	defaultDeduplication time.Duration = time.Minute * 2
 )
 
-func NewStore(ctx context.Context, js jetstream.JetStream, name string, opts ...Option) (*eventStore, error) {
+func New(ctx context.Context, js jetstream.JetStream, name string, opts ...Option) (*eventStore, error) {
 	cfg := &eventStreamConfig{
 		StoreType:     Disk,
 		Deduplication: defaultDeduplication,

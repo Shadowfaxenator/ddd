@@ -23,7 +23,7 @@ const (
 	Memory
 )
 
-func NewStore(ctx context.Context, js jetstream.JetStream, name string, options ...Option) (*snapshotStore, error) {
+func New(ctx context.Context, js jetstream.JetStream, name string, options ...Option) (*snapshotStore, error) {
 	cfg := &snapshotStoreConfig{
 		StoreType: Disk,
 	}
