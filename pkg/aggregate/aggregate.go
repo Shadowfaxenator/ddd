@@ -50,7 +50,7 @@ func (ag *Aggregate[T, PT]) startSnapshoting(ctx context.Context) {
 					continue
 				}
 				cancel()
-				ag.logger().Info("snapshot saved", "id", a.ID.String(), "version", a.Version, "sequence", a.Sequence)
+				ag.logger().Info("snapshot saved", "aggregateID", a.ID.String(), "version", a.Version, "sequence", a.Sequence)
 			}
 		}
 	}(ctx)
@@ -160,7 +160,7 @@ func (a *Aggregate[T, PT]) build(ctx context.Context, id ID, sn *snapshot.Snapsh
 	events := a.es.LoadEvents(ctx, identity.ID(id), aggr.Sequence)
 	for event, err := range events {
 		if err != nil {
-			if errors.Is(err, ErrNotExists) {
+			if errors.Is(err, stream.ErrNoEvents) {
 				if sn == nil {
 					return nil, nil
 				}

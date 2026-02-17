@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/alekseev-bro/ddd/internal/prettylog"
-	"github.com/alekseev-bro/ddd/pkg/aggregate"
 	"github.com/alekseev-bro/ddd/pkg/qos"
 	"github.com/alekseev-bro/ddd/pkg/stream"
 
@@ -168,7 +167,7 @@ func (s *eventStore) Load(ctx context.Context, aggrID int64, fromSeq uint64, han
 		if err != nil {
 			if errors.Is(err, jetstreamext.ErrNoMessages) {
 
-				return aggregate.ErrNotExists
+				return stream.ErrNoEvents
 			}
 			return fmt.Errorf("build func can't get msg batch: %w", err)
 		}
@@ -222,9 +221,9 @@ func (e *eventStore) processMessage(m natsMessage, a ackNaker, handler func(msg 
 	}
 	if err := handler(sm); err != nil {
 		if nonRetErr, ok := errors.AsType[stream.NonRetriableError](err); ok {
-			e.Logger.Warn("invariant violation", "reason", nonRetErr.Err.Error())
+			e.Logger.Warn("event skiped", "reason", nonRetErr.Err.Error())
 		} else {
-			e.Logger.Warn("redelivering...", "error", err)
+			e.Logger.Warn("redelivering", "error", err)
 			a.Nak()
 			return
 		}
